@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+
+# Environment / secrets (FIRMS MAP_KEY etc.)
+.env
+.env.*
+!.env.example
+
+# Large raw data — keep out of git
+data/raw/
+*.zip
+*.parquet
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
