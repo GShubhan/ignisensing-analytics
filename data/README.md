@@ -1,4 +1,4 @@
-# data/ — Data pipeline + cleaning
+# data/  Data pipeline + cleaning
 
 **Owner: Jasmine**
 
@@ -8,7 +8,7 @@ Download MODIS and VIIRS active fire hotspots from [NASA FIRMS](https://firms.mo
 
 | Folder | What goes here | In git? |
 |---|---|---|
-| `raw/` | Original FIRMS downloads (large CSVs/zips) | ❌ No — ignored, too big |
+| `raw/` | Original FIRMS downloads (large CSVs/zips) | ❌ No - ignored, too big |
 | `processed/` | Cleaned outputs that follow SCHEMA.md | ✅ Yes, if small (< 50 MB) |
 
 ## Tasks
