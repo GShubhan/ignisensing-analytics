@@ -1,7 +1,7 @@
 from pathlib import Path
 import pandas as pd
 
-processed_folder = Path("data/processed")
+processed_folder = Path(__file__).resolve().parent / "processed"
 monthly_file = processed_folder / "monthly_counts.csv"
 
 df = pd.read_csv(monthly_file)

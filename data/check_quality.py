@@ -2,7 +2,7 @@
 from pathlib import Path
 import pandas as pd
 
-raw_folder = Path("data/raw")
+raw_folder = Path(__file__).resolve().parent / "raw"
 
 for file in sorted(raw_folder.rglob("*.csv")):
     print(f"\nFILE: {file.name}")

@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent  # repo root (script lives in data/)
 RAW = ROOT / 'data/raw'
 OUT = ROOT / 'data/processed'
 OUT.mkdir(parents=True, exist_ok=True)

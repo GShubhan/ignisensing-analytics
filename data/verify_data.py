@@ -4,7 +4,7 @@ import json
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent  # repo root (script lives in data/)
 OUT = ROOT / 'data/processed'
 with (ROOT / 'data/fire_filter_config.json').open() as file:
     config = json.load(file)
