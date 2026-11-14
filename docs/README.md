@@ -1,4 +1,4 @@
-# docs/ — Submission materials
+# docs/ - Submission materials
 
 **Owner: Luis** (communication lead + submission)
 
