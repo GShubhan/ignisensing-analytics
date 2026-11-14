@@ -1,4 +1,4 @@
-# web/ — Dashboard
+# web/ - Dashboard
 
 **Owners: Ayska, Luis, Nguyen**
 

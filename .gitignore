@@ -16,7 +16,7 @@ build/
 .env.*
 !.env.example
 
-# Large raw data — keep out of git
+# Large raw data: keep out of git
 data/raw/
 *.zip
 *.parquet
