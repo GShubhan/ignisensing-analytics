@@ -21,7 +21,29 @@ Defined in [../docs/data-quality-filters.md](../docs/data-quality-filters.md) (D
 | Confidence | ≥ 30 (nominal + high) | `n` + `h` |
 | Fire type | `type == 0` | `type == 0` |
 
-⚠️ **NRT caveat:** the most recent months only exist as NRT data, and NRT files have **no `type` column**. Apply the `type == 0` filter to Standard (SP) rows only, or every recent fire is dropped.
+⚠️ **NRT caveat:** the most recent months only exist as NRT data, and NRT files have **no `type` column**. Applying `type == 0` to NRT rows would drop every recent fire. Instead, non-vegetation rows are **flagged, not dropped**, using the columns below.
+
+### Non-vegetation flags (fire type + static sources)
+
+`hotspots.csv` keeps all rows that pass the satellite, year and confidence filters, and marks whether each one is a vegetation fire:
+
+| Column | Values | How it is set |
+|---|---|---|
+| `fire_type` | `0`–`3` or blank | Original FIRMS archive `type` (0 = vegetation, 1 = volcano, 2 = other static land source, 3 = offshore). Blank for NRT rows. |
+| `static_source_mask` | `1` / `0` | `1` if the detection falls inside a known static-source cell (see below), else `0`. Computed for **all** rows, SP and NRT. |
+| `vegetation_flag` | `1` / `0`, **never blank** | **The one column everyone filters on.** SP rows: `1` if `fire_type == 0`, else `0`. NRT rows: `0` if `static_source_mask == 1`, else `1`. |
+
+**Rules:**
+
+- **Everyone filters `vegetation_flag == 1`**: the counts tables, the ML model and the dashboard map. Nobody re-implements the type/mask logic.
+- **`cell_monthly_counts.csv` counts only `vegetation_flag == 1` rows**, so volcanoes and gas flares are never counted as fires.
+- **Booleans are `1` / `0`** in every column (not `True` / `False`).
+
+**Static-source cells:**
+
+- Use a **fine grid of 0.01° (~1 km)**, **not** the 0.25° training grid. Volcanoes, flares and factories are small. A 0.25° (~28 km) mask would delete real fires across a large area of farmland around each one.
+- A 0.01° cell is a static source if SP data tagged a detection there as `fire_type` 1 or 2 in **at least 3 different months**.
+- Save the list as `processed/static_source_cells.csv` (`cell_lat`, `cell_lon` as cell centres) so the mask can be re-applied to new NRT data.
 
 ---
 
@@ -40,10 +62,13 @@ Defined in [../docs/data-quality-filters.md](../docs/data-quality-filters.md) (D
 | `frp` | float | `12.4` | Fire radiative power (MW) |
 | `daynight` | `D` / `N` | `D` | |
 | `source` | `SP` / `NRT` | `SP` | Standard archive or Near Real-Time |
+| `fire_type` | `0`–`3` or blank | `0` | See "Non-vegetation flags" above |
+| `static_source_mask` | `1` / `0` | `0` | See "Non-vegetation flags" above |
+| `vegetation_flag` | `1` / `0` | `1` | **Filter on this.** See "Non-vegetation flags" above |
 
 ## 2. `cell_monthly_counts.csv`: counts per grid cell per month per satellite (ML training data)
 
-Built from `hotspots.csv` after filtering. Grid = **0.25° × 0.25°** cells (~28 km).
+Built from `hotspots.csv` using **only `vegetation_flag == 1` rows**. Grid = **0.25° × 0.25°** cells (~28 km).
 
 | Column | Type | Example | Notes |
 |---|---|---|---|
