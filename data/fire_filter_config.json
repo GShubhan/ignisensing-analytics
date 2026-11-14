@@ -1,0 +1,6 @@
+{
+  "grid_size_degrees": 0.01,
+  "minimum_archive_months": 3,
+  "static_source_types": [1, 2],
+  "apply_mask": true
+}

@@ -21,6 +21,10 @@ data/raw/
 *.zip
 *.parquet
 
+# Large processed hotspot dataset
+data/processed/hotspots.csv
+data/processed/cell_monthly_counts.csv
+
 # OS / editor
 .DS_Store
 Thumbs.db
