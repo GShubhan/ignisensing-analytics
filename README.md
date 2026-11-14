@@ -14,11 +14,22 @@ Satellites have tracked active fire hotspots for more than 20 years. The record 
 
 ## Repository layout
 
-_To be filled in as the project takes shape._
+| Folder | What | Owner |
+|---|---|---|
+| [`data/`](data/) | FIRMS download, cleaning, shared data format ([SCHEMA.md](data/SCHEMA.md)) | Jasmine |
+| [`ml/`](ml/) | MODIS ↔ VIIRS harmonization model | Shubhan |
+| [`web/`](web/) | Dashboard website (auto-deployed on Vercel) | Ayska, Luis, Nguyen |
+| [`docs/`](docs/) | Submission write-up, screenshots, demo video | Luis |
+
+Each folder has its own README with tasks. Work mostly inside your own folder to avoid merge conflicts.
 
 ## Team
 
-_Team members and roles._
+- **Jasmine**: data pipeline + cleaning, dashboard design sketch
+- **Shubhan**: harmonization ML model
+- **Ayska, Luis, Nguyen**: dashboard
+- **Luis**: communication lead + submission
+- **Data visualisation**: _owner TBD_
 
 ## Data sources
 
