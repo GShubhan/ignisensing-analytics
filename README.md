@@ -1,6 +1,6 @@
 # Ignisensing Analytics
 
-**2026 NASA Space Apps Challenge** — Harmonized burning activity calendar from MODIS and VIIRS active fire hotspots.
+**2026 NASA Space Apps Challenge**: Harmonized burning activity calendar from MODIS and VIIRS active fire hotspots.
 
 ## The challenge
 
