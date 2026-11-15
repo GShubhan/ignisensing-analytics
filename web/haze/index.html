@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Haze Outlook | Ignisensing Analytics</title>
+  <meta name="description" content="Transboundary smoke risk for Singapore and Kuala Lumpur: wind forecast, PM2.5 forecast and active fires in Sumatra and Kalimantan.">
+  <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=League+Spartan:wght@600;700&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="haze.css">
+</head>
+<body>
+  <!-- icon sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 2c1 4-3 5-3 9a3 3 0 0 0 6 0c0-1-.5-2-1-3 3 1 5 4 5 7a7 7 0 0 1-14 0c0-6 5-8 7-13z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-wind" viewBox="0 0 24 24"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 22s7-6.5 7-12a7 7 0 0 0-14 0c0 5.5 7 12 7 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-bars" viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3c4 5 6 8 6 11a6 6 0 0 1-12 0c0-3 2-6 6-11z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <header class="page-header">
+    <div class="head-text">
+      <h1>Haze Outlook</h1>
+      <p class="subtitle">Transboundary smoke risk for Singapore and Kuala Lumpur</p>
+    </div>
+    <div class="head-controls">
+      <div class="field">
+        <label for="sel-city">City</label>
+        <select id="sel-city">
+          <option value="singapore">Singapore</option>
+          <option value="kuala_lumpur">Kuala Lumpur</option>
+        </select>
+      </div>
+      <p class="stamp" id="stamp" aria-live="polite">Loading data</p>
+    </div>
+  </header>
+
+  <main>
+    <div id="notices" class="notices" role="status"></div>
+
+    <section class="kpis" aria-label="Key figures">
+      <article class="card kpi">
+        <h3 class="card-title"><svg class="ico"><use href="#i-cal"/></svg>Tomorrow</h3>
+        <div class="value" id="kpi-tomorrow-value">-</div>
+        <div class="sub" id="kpi-tomorrow-sub"></div>
+      </article>
+      <article class="card kpi">
+        <h3 class="card-title"><svg class="ico"><use href="#i-bars"/></svg>Peak next 5 days</h3>
+        <div class="value" id="kpi-peak-value">-</div>
+        <div class="sub" id="kpi-peak-sub"></div>
+      </article>
+      <article class="card kpi">
+        <h3 class="card-title"><svg class="ico"><use href="#i-flame"/></svg>Active fires, 7 days</h3>
+        <div class="value" id="kpi-fires-value">-</div>
+        <div class="sub" id="kpi-fires-sub"></div>
+      </article>
+      <article class="card kpi">
+        <h3 class="card-title"><svg class="ico"><use href="#i-pin"/></svg>Main source</h3>
+        <div class="value" id="kpi-source-value">-</div>
+        <div class="sub" id="kpi-source-sub"></div>
+      </article>
+    </section>
+
+    <section aria-label="Five day outlook">
+      <h2 class="section-title"><svg class="ico"><use href="#i-clock"/></svg>5-day outlook <span id="strip-city" class="muted"></span></h2>
+      <div class="strip" id="strip"></div>
+    </section>
+
+    <section aria-label="Fire map">
+      <h2 class="section-title"><svg class="ico"><use href="#i-wind"/></svg>Fires and wind <span id="map-caption" class="muted"></span></h2>
+      <div class="card">
+        <div id="map"></div>
+        <div class="legend" id="map-legend"></div>
+      </div>
+    </section>
+
+    <section aria-label="Season context">
+      <h2 class="section-title"><svg class="ico"><use href="#i-drop"/></svg>Season context</h2>
+      <div class="card">
+        <div class="context" id="season-context"></div>
+      </div>
+    </section>
+
+    <section aria-label="Season history">
+      <h2 class="section-title"><svg class="ico"><use href="#i-bars"/></svg>Season history</h2>
+      <details class="card history" id="history">
+        <summary class="btn btn-secondary"><span class="when-closed">Show season history</span><span class="when-open">Hide season history</span></summary>
+        <p class="hint hint-line">Monthly risk index since 2003, June to October season map and the top 10 years.</p>
+        <div class="history-body">
+          <div class="controls">
+            <div class="field">
+              <label for="sel-year">Year</label>
+              <select id="sel-year"></select>
+            </div>
+            <div class="field">
+              <label for="sel-month">Month</label>
+              <select id="sel-month"></select>
+            </div>
+            <div class="field">
+              <label for="sel-region">Source region</label>
+              <select id="sel-region">
+                <option value="both">Both</option>
+                <option value="sumatra">Sumatra</option>
+                <option value="kalimantan">Kalimantan</option>
+              </select>
+            </div>
+            <div class="spacer"></div>
+            <button id="btn-csv" class="btn btn-primary" type="button">Download risk series (CSV)</button>
+          </div>
+
+          <h3 class="sub-title">Monthly risk index, 2003 to today</h3>
+          <p class="hint">Orange: the risk index. Dashed blue: level thresholds (50, 75, 90). Dotted lines: dry years (El Niño / IOD). The lighter dashed end is near real-time data, not harmonized. Click a month to select it.</p>
+          <div class="chart-box"><canvas id="chart" role="img" aria-label="Monthly haze risk index"></canvas></div>
+
+          <div class="split">
+            <div>
+              <h3 class="sub-title">June to October fire activity</h3>
+              <p class="hint" id="hist-map-hint">Cells show the selected season against their own 2003-2025 median.</p>
+              <div id="hist-map"></div>
+              <div class="legend" id="hist-legend"></div>
+            </div>
+            <div>
+              <h3 class="sub-title">Top 10 years by peak risk</h3>
+              <p class="hint">Highest monthly index between June and October. Click a year to view it.</p>
+              <ol class="rank-list" id="ranking"></ol>
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <p><a href="https://github.com/GShubhan/ignisensing-analytics/blob/main/docs/haze-method.md" target="_blank" rel="noopener">About this data</a></p>
+    <p>
+      Fires: <a href="https://firms.modaps.eosdis.nasa.gov/" target="_blank" rel="noopener">NASA FIRMS</a> (VIIRS near real time and the MODIS + VIIRS archive).
+      Wind and PM2.5 forecast: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a>,
+      PM2.5 from CAMS (Copernicus Atmosphere Monitoring Service, modified).
+      Map tiles: Esri. Risk indicator built by the team, not an official warning.
+      <span id="generated"></span>
+    </p>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="haze.js"></script>
+</body>
+</html>

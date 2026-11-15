@@ -10,8 +10,10 @@ Filters applied to the FIRMS hotspot data before harmonization, so the fire cale
 | Years | 2003 to today | 2012 to today | 2003 is the first full year with both MODIS satellites; S-NPP starts Jan 2012 |
 | Confidence | >= 30 (nominal + high) | nominal + high (`n`, `h`) | Low confidence detections are mostly sun glint, cloud edges and hot bare ground |
 | Fire type | `type == 0` | `type == 0` | Removes volcanoes and static industrial heat sources |
-| Product | Standard archive (SP) | Standard archive (SP) | Reprocessed and consistent over time; NRT only for the most recent weeks |
+| Product | Standard archive (SP) for history, NRT for the most recent months | Standard archive (SP) for history, NRT for the most recent months | SP is reprocessed and consistent over time; NRT is the only source for the latest months |
 | Day / night | keep both | keep both | Keep the `daynight` column so we can split later if needed |
+
+**Note on NRT and the static-source mask:** NRT files have no `type` column, so `type == 0` cannot be applied to them. The pipeline keeps all detections that pass the other filters and sets `vegetation_flag`: archive rows get `1` when `type == 0`; NRT rows get `0` when they fall in a static-source cell (0.01 degree cells where the archive tagged a volcano or other static source in at least 3 different months), otherwise `1`. Everyone filters on `vegetation_flag == 1`. Details in `data/README.md`.
 
 ## Details
 
@@ -41,7 +43,7 @@ Run the harmonization twice, with MODIS confidence >= 30 and >= 50. If the resul
 ## To check in the downloaded files
 
 - [ ] The CSV includes the `confidence` and `type` columns
-- [ ] Data comes from the standard archive (SP), not NRT
+- [ ] Archive (SP) for history, NRT only for recent months (masked with static source cells)
 - [ ] Area: Indonesia; MODIS 2003 to today, VIIRS S-NPP 2012 to today
 
 ## Reference implementation (pandas)
