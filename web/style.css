@@ -143,6 +143,8 @@ main:focus { outline: none; }
 }
 .harmonize-callout.is-raw { border-left-color: var(--color-error); }
 .seg:disabled { opacity: 0.4; cursor: not-allowed; }
+.link-btn { padding: 0; border: 0; background: none; color: var(--color-info); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.link-btn:hover { color: var(--color-ink); }
 
 /* Custom area of interest (filter bar) */
 .aoi-toggle { min-height: 40px; }

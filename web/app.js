@@ -570,7 +570,8 @@ function syncFilters() {
   const areaSel = $("#f-area"), custom = M.bySlug.get(CUSTOM);
   let opt = $(`option[value="${CUSTOM}"]`, areaSel);
   if (custom && !opt) { opt = html("option", { value: CUSTOM }); areaSel.children[0].after(opt); }
-  if (opt) opt.textContent = `Custom: ${custom.name}`;
+  // Keep the dropdown short; the full coordinates are in the page subtitle
+  if (opt) opt.textContent = custom.aoi.type === "box" ? "Custom: drawn area" : `Custom: ${custom.name}`;
   $("#aoi-toggle")?.setAttribute("aria-pressed", String(isCustom()));
   $("#f-area").value = state.area;
   $("#f-year").value = state.year;
@@ -995,6 +996,14 @@ function renderCalendar() {
   const rawBtn = $('[data-calmode="raw"]');
   rawBtn.disabled = !national;
   rawBtn.title = national ? "Show the raw MODIS and VIIRS counts, before harmonization" : "Raw sensor counts are published for Indonesia as a whole only";
+  // Say why the button is unavailable, instead of leaving it only in a hover title
+  const hint = $('[data-card="calendar"] .toolbar .hint');
+  hint.replaceChildren(document.createTextNode("Hover to inspect. Select a cell to lock the month."));
+  if (!national) {
+    const back = html("button", { type: "button", class: "link-btn", text: "Switch to all of Indonesia" });
+    back.addEventListener("click", () => setState({ area: "indonesia", calMode: "raw" }));
+    hint.append(html("br"), document.createTextNode("Raw sensors compares MODIS and VIIRS for Indonesia as a whole only. "), back);
+  }
   const mode = state.calMode === "raw" && !national ? "count" : state.calMode;
   for (const b of $$("[data-calmode]")) b.setAttribute("aria-pressed", String(b.dataset.calmode === mode));
   const harm = series(state.area), area = areaName(state.area);
