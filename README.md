@@ -20,7 +20,7 @@ Satellites have tracked active fire hotspots for more than 20 years. The record 
 |---|---|---|
 | [`data/`](data/) | FIRMS download, cleaning pipeline, shared data format ([SCHEMA.md](data/SCHEMA.md)) | Jasmine |
 | [`ml/`](ml/) | MODIS ↔ VIIRS harmonization model and its evaluation | Shubhan |
-| [`web/`](web/) | Dashboard website and haze outlook (auto-deployed on Vercel) | David, Shubhan |
+| [`web/`](web/) | Dashboard website and haze outlook (auto-deployed on Vercel) | Luis, Nguyen, Ayska, David, Shubhan |
 | [`haze/`](haze/) | Scripts that build the haze outlook data | David |
 | [`docs/`](docs/) | Data quality filters, haze method, submission material | David, Luis |
 
@@ -32,10 +32,10 @@ Each folder has its own README.
 |---|---|
 | **Jasmine** | FIRMS data pipeline: download, cleaning and verification scripts; vegetation flag and static heat-source mask; dashboard design sketch; presentation slides and demo video (with Ayska) |
 | **Shubhan** | Repository, Vercel and shared data schema setup; MODIS ↔ VIIRS harmonization model (feature search, leave-one-year-out validation, ratio + LightGBM blend); raw vs harmonized calendar comparison; custom area of interest (coordinates or drawn on the map) |
-| **David** | MODIS/VIIRS data quality filters; dashboard frontend (overview, activity calendar, fire map, historical analysis, priority watchlist); haze outlook for Singapore and Kuala Lumpur |
-| **Ayska** | Presentation slides and demo video (with Jasmine) |
-| **Nguyen** | Landing page introduction and feature list |
-| **Luis** | Communication lead: team coordination, mentor contact and project submission |
+| **Luis** | Dashboard frontend (with Nguyen and Ayska); communication lead: team coordination, mentor contact and project submission |
+| **Nguyen** | Dashboard frontend (with Luis and Ayska) |
+| **Ayska** | Dashboard frontend (with Luis and Nguyen); presentation slides and demo video (with Jasmine) |
+| **David** | Haze outlook for Singapore and Kuala Lumpur; MODIS/VIIRS data quality filters; uploaded the team's frontend to GitHub |
 
 ## Data sources
 
