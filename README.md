@@ -16,7 +16,7 @@ Satellites have tracked active fire hotspots for more than 20 years. The record 
 
 | Folder | What | Owner |
 |---|---|---|
-| [`data/`](data/) | FIRMS download, cleaning, shared data format ([SCHEMA.md](data/SCHEMA.md)) | Jasmine |
+| [`data/`](data/) | FIRMS download, cleaning pipeline, shared data format ([SCHEMA.md](data/SCHEMA.md)) | Jasmine |
 | [`ml/`](ml/) | MODIS ↔ VIIRS harmonization model | Shubhan |
 | [`web/`](web/) | Dashboard website (auto-deployed on Vercel) | Ayska, Luis, Nguyen |
 | [`docs/`](docs/) | Submission write-up, screenshots, demo video | Luis |
