@@ -262,7 +262,7 @@ function showTip(title, rows, note, anchor) {
   tip.replaceChildren(
     html("div", { class: "tip-title", text: title }),
     ...rows.map((r) => html("div", { class: "tip-row" }, [r.colour ? key(r.colour, r.kind) : null, html("strong", { text: r.value }), document.createTextNode(` ${r.label ?? ""}`)])),
-    note ? html("div", { class: "tip-note", text: note }) : null,
+    ...(note ? [html("div", { class: "tip-note", text: note })] : []),
   );
   tip.hidden = false;
   const { width, height } = tip.getBoundingClientRect();
@@ -1469,7 +1469,7 @@ function renderSeries() {
   }
   list.push({ name: "Harmonized (VIIRS-equivalent)", data: harm, colour: C.fire, width: 2 });
   title.textContent = national ? "Monthly detections by sensor, 2003 to now" : "Monthly harmonized detections, 2003 to now";
-  sub.textContent = `${areaName(state.area)}, ${monthLabel(0)} to ${monthLabel(last)}. The shaded column marks ${state.year}.`;
+  sub.textContent = `${areaName(state.area)}, ${monthLabel(0)} to ${monthLabel(last)}. The shaded column marks ${state.year}. Click a year to select it.`;
   note.textContent = `${national ? "From February 2012 the harmonized line is the observed VIIRS count, so the two overlap. " : "Raw MODIS and VIIRS series are published for Indonesia as a whole only. "}The band around the model years shows the typical annual error of ±${M.err.toFixed(1)}% from the leave-one-year-out test.${D.meta.lastPartial ? ` ${monthLabel(M.last)} is still being collected and is not drawn.` : ""}`;
   exporters.series = () => [["year", "month", ...list.map((s) => s.name)], ...Array.from({ length: last + 1 }, (_, i) => [M.yearOf(i), M.monthOf(i), ...list.map((s) => s.data[i]?.toFixed(1) ?? "")])];
   legend(lg, [...list].reverse().map((s) => ({ colour: s.colour, label: s.name })));
@@ -1522,7 +1522,9 @@ function renderAnomaly() {
   const months = p.months;
   const c = compare(ser, state.year, months);
   const data = c.totals.map((t) => ({ ...t, diff: c.median > 0 ? ((t.value - c.median) / c.median) * 100 : 0 }));
-  title.textContent = `Each year against the median${p.span === "Annual" ? "" : `, ${p.span}`}`;
+  // the month that follows the filter is highlighted in the fire colour
+  title.replaceChildren(document.createTextNode("Each year against the median"),
+    ...(p.span === "Annual" ? [] : [document.createTextNode(", "), html("span", { class: "title-month", text: p.span })]));
   sub.textContent = `${areaName(state.area)}. Difference from the ${baseLabel()} median of ${fmt(c.median)} detections.${p.status !== "ok" ? ` ${p.label} is not complete, so it is not shown.` : ""}`;
   exporters.anomaly = () => [["year", "detections", "median", "difference_pct"], ...data.map((d) => [d.year, d.value.toFixed(1), c.median?.toFixed(1), d.diff.toFixed(1)])];
   legend(lg, [{ colour: C.fire, label: "Above the median", kind: "rect" }, { colour: C.cool[2], label: "Below the median", kind: "rect" }]);
@@ -1622,6 +1624,7 @@ function sparkline(ser, meds) {
   ]);
 }
 let watchSelection = null;
+let watchAreaShown = null; // the area the Watchlist last drew, to scroll to the row only when it changes
 function watchBadge(category) {
   const pri = PRIORITY[category];
   const badge = html("span", { class: `badge ${pri.cls}` });
@@ -1677,6 +1680,10 @@ function renderWatchlist() {
   const { chart, sub, title, card } = cardEls("watch");
   addActions("watch", { png: false });
   const p = period();
+  // the selected province follows the Area filter (and a clicked row sets the filter, see below)
+  watchSelection = state.area === "indonesia" ? null : state.area;
+  const areaChanged = state.area !== watchAreaShown;
+  watchAreaShown = state.area;
   title.textContent = "Priority Watchlist";
   sub.textContent = `${p.label} · ${D.provinces.length} provinces · Baseline: the same months in complete years, ${baseLabel()}. ${spatialProvenance(p).detail}`;
   $("#watch-rules").replaceChildren(...[
@@ -1713,7 +1720,6 @@ function renderWatchlist() {
   exporters.watch = () => [["province", "priority", "detections", "median", "difference_pct", "rank", "years_compared", "share_of_indonesia_pct", "period"],
     ...rows.map((r) => [r.pr.name, ({ high: "High", watch: "Watch", typical: "Typical", low: "Low volume" })[r.pri], r.c.value.toFixed(1), r.c.median?.toFixed(1), r.c.diff?.toFixed(1) ?? "", r.c.rank, r.c.of, r.share.toFixed(1), p.label])];
 
-  if (!watchSelection && state.area !== "indonesia") watchSelection = state.area;
   const head = ["Province", "Screening indicator", "Selected-period activity", "Historical median", "Difference from median", `${state.year} by month`];
   const numCols = new Set([2, 3, 4]);
   const table = html("table", { class: "data-table watch-table" }, [
@@ -1738,6 +1744,14 @@ function renderWatchlist() {
       ]);
       row.addEventListener("click", () => {
         watchSelection = r.pr.slug;
+        if (state.area !== r.pr.slug) {
+          // same effect as choosing the province in the filter, without redrawing the table
+          state.area = r.pr.slug;
+          state.mapCell = null;
+          watchAreaShown = r.pr.slug;
+          writeURL();
+          syncFilters();
+        }
         for (const el of $$("tbody tr", table)) {
           const selected = el.dataset.province === watchSelection;
           el.classList.toggle("is-selected", selected);
@@ -1751,6 +1765,11 @@ function renderWatchlist() {
   chart.replaceChildren(html("div", { class: "table-wrap" }, table),
     html("p", { class: "card-note", text: `Sparklines: ${state.year} by month in orange, the ${baseLabel()} monthly median in grey.` }));
   renderWatchInspector(rows.find((r) => r.pr.slug === watchSelection), p);
+  // when the filter chose the province, bring its row into view
+  if (areaChanged && watchSelection) {
+    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    $("tbody tr.is-selected", table)?.scrollIntoView({ block: "center", behavior: calm ? "auto" : "smooth" });
+  }
 }
 
 // ---------- about ----------

@@ -223,12 +223,6 @@
 
       <!-- Historical analysis -->
       <section class="view" data-view="history" aria-labelledby="page-title" hidden>
-        <article class="card" data-card="series">
-          <header class="card-head"><div><h2 data-title>Monthly detections, 2003 to now</h2><p class="card-sub" data-sub></p></div><div class="card-actions" data-actions></div></header>
-          <div class="legend" data-legend></div>
-          <div class="chart" data-chart><div class="skeleton skeleton-tall"></div></div>
-          <p class="card-note" data-note></p>
-        </article>
         <div class="grid grid-1-1">
           <article class="card" data-card="anomaly">
             <header class="card-head"><div><h2 data-title>Each year against the median</h2><p class="card-sub" data-sub></p></div><div class="card-actions" data-actions></div></header>
@@ -241,6 +235,12 @@
             <p class="card-note" data-note></p>
           </article>
         </div>
+        <article class="card" data-card="series">
+          <header class="card-head"><div><h2 data-title>Monthly detections, 2003 to now</h2><p class="card-sub" data-sub></p></div><div class="card-actions" data-actions></div></header>
+          <div class="legend" data-legend></div>
+          <div class="chart" data-chart><div class="skeleton skeleton-tall"></div></div>
+          <p class="card-note" data-note></p>
+        </article>
       </section>
 
       <!-- Priority watchlist -->
@@ -272,7 +272,7 @@
           </div>
           <p class="card-note">Provincial activity is estimated from harmonized geographical grid cells and may not correspond exactly to administrative boundaries.</p>
           <details class="rules">
-            <summary>How screening indicators are assigned</summary>
+            <summary><span class="rules-label">How screening indicators are assigned?</span></summary>
             <ul id="watch-rules"></ul>
             <p>Rules are evaluated in the order shown. These are application-defined historical screening heuristics, not scientifically validated wildfire-risk or emergency-response thresholds. Only complete, comparable periods are classified. Hotspot detections are not distinct fires or burned area; zero detections do not prove that no physical fires occurred.</p>
           </details>

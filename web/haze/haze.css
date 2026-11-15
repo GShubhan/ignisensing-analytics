@@ -166,7 +166,7 @@
 /* ---------- loading states (soft pulse, same animation as the dashboard skeletons) ---------- */
 .haze .is-loading { color: var(--muted); animation: pulse 1.6s var(--ease-in-out) infinite; }
 .haze .day-skeleton { min-height: 200px; border: var(--rule-hair) solid var(--line); border-top: 4px solid var(--line); }
-.haze .kpi .value.small { font-size: 22px; line-height: 1.2; }
+.haze .kpi .value.small { font-size: 21px; line-height: 1.2; }
 
 /* ---------- notices ---------- */
 .haze .notices:empty { display: none; }
@@ -180,15 +180,17 @@
 }
 
 /* ---------- KPI cards ---------- */
-.haze .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-lg); }
-.haze .kpi { display: block; min-height: 0; }
+.haze .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-md); align-items: stretch; }
+.haze .kpi { display: flex; flex-direction: column; justify-content: flex-start; align-content: start; gap: 0; min-height: 0; padding: var(--space-md); }
+.haze .kpi .card-title { margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; letter-spacing: 0.04em; }
+.haze .kpi .card-title .ico { flex: none; }
 .haze .kpi .value {
   font-family: var(--font-title);
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1.15;
 }
-.haze .kpi .sub { margin-top: 6px; font-size: 14px; color: var(--text-2); }
+.haze .kpi .sub { margin-top: 4px; font-size: 13px; line-height: 1.35; color: var(--text-2); }
 .haze .kpi .sub.up { color: var(--red-text); }
 .haze .kpi .sub.down { color: var(--blue); }
 
@@ -199,17 +201,21 @@
 .haze .lvl-3 { color: var(--lvl-3); }
 
 /* ---------- 5 day strip ---------- */
-.haze .strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-md); }
+.haze .strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-md); align-items: stretch; }
 .haze .day {
   background: var(--card);
   border: var(--rule-hair) solid var(--line);
   border-top: 4px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px 14px 12px;
+  padding: 12px 12px 10px;
   text-align: left;
   color: inherit;
   font: inherit;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
 }
 .haze .day:hover { background: var(--card-alt); }
 .haze .day.selected { border-color: var(--color-active); background: var(--card-alt); }
@@ -222,12 +228,15 @@
 .haze .day .d-sub { font-size: var(--fs-small); color: var(--text-2); }
 .haze .day .d-level { margin-top: 8px; font-family: var(--font-title); font-weight: 600; font-size: 20px; }
 .haze .day .d-pm { font-size: 14px; color: var(--text); }
-.haze .day .d-wind { margin-top: 8px; display: flex; align-items: center; gap: 8px; font-size: var(--fs-small); color: var(--text-2); }
+.haze .day .d-wind { margin-top: 8px; display: flex; align-items: center; gap: 8px; color: var(--text-2); }
+.haze .day .d-wind-text { display: grid; line-height: 1.25; min-width: 0; }
+.haze .day .d-label { font-size: 11px; color: var(--text-2); }
+.haze .day .d-wind-value { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; }
 .haze .wind-arrow {
   display: inline-block;
-  width: 28px;
-  height: 28px;
-  line-height: 28px;
+  width: 26px;
+  height: 26px;
+  line-height: 26px;
   text-align: center;
   border: var(--rule-hair) solid var(--blue);
   border-radius: 50%;
@@ -235,7 +244,7 @@
   font-size: 15px;
   flex: none;
 }
-.haze .day .d-fires { margin-top: 6px; font-size: var(--fs-small); color: var(--text-2); }
+.haze .day .d-fires { margin-top: 4px; font-size: var(--fs-small); color: var(--text-2); white-space: nowrap; }
 
 /* ---------- maps ---------- */
 .haze #map, .haze #hist-map {
@@ -254,6 +263,11 @@
   color: var(--text-2);
 }
 .haze .legend .item { display: inline-flex; align-items: center; gap: 6px; }
+/* the fire map legend: two groups, each with a small title */
+.haze .legend.legend-groups { display: flex; flex-wrap: wrap; gap: 14px 48px; align-items: flex-start; }
+.haze .legend-group { display: grid; gap: 6px; min-width: 0; }
+.haze .legend-title { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
+.haze .legend-row { display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .haze .legend .swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
 .haze .legend .swatch.cone { background: var(--cone-fill); border: 1px dashed var(--blue); }
 .haze .legend .swatch.outline { background: var(--frp-2); outline: 1.5px solid var(--text); }
@@ -363,8 +377,11 @@
 .haze-footer a:hover { color: var(--text); }
 
 /* ---------- responsive ---------- */
+@media (max-width: 1360px) {
+  .haze .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 1000px) {
-  .haze .kpis { grid-template-columns: repeat(2, 1fr); }
   .haze .split { grid-template-columns: 1fr; }
   .haze #map { height: 400px; }
   .haze #hist-map { height: 380px; }
@@ -380,10 +397,18 @@
 }
 
 @media (max-width: 600px) {
-  .haze .kpis { grid-template-columns: 1fr; gap: var(--space-md); }
-  .haze .kpi .value { font-size: 28px; }
+  .haze .kpis { grid-template-columns: 1fr; gap: var(--space-sm); }
+  .haze .legend.legend-groups { flex-direction: column; gap: 14px; }
   .haze .rank-row { grid-template-columns: 24px 44px minmax(0, 1fr); }
   .haze .rank-row > .meta:last-child { grid-column: 2 / -1; text-align: left; white-space: normal; }
   .haze #map { height: 360px; }
   .haze-city { flex: 1 1 140px; }
 }
+
+/* ---------- entry animation (keyframes "view-in" come from ../style.css, same as the dashboard views) ---------- */
+.haze > * { animation: view-in 450ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.haze > :nth-child(1) { animation-delay: 140ms; }
+.haze > :nth-child(2) { animation-delay: 210ms; }
+.haze > :nth-child(3) { animation-delay: 280ms; }
+.haze > :nth-child(n+4) { animation-delay: 350ms; }
+@media (prefers-reduced-motion: reduce) { .haze > * { animation: none; } }

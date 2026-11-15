@@ -175,6 +175,12 @@
     return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
+  /** Shorter day label for subtitles, for example "Mon 16". */
+  function dayShort(dateStr) {
+    var d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
+  }
+
   // ---------- forecast loading and daily summaries ----------
 
   function windUrl(city) {
@@ -356,12 +362,20 @@
     return 'from ' + compass(w.dirFrom) + ' (' + Math.round(w.dirFrom) + '°), ' + w.speed.toFixed(1) + ' m/s';
   }
 
+  /** Compact wind for the cards, for example "NNW 5.8 m/s". */
+  function windShort(w) {
+    if (!w) { return 'no data'; }
+    if (!w.reliable) { return 'light, variable'; }
+    return compass(w.dirFrom) + ' ' + w.speed.toFixed(1) + ' m/s';
+  }
+
   // ---------- KPIs ----------
 
   function setKpi(id, value, sub, valueClass, subClass) {
     var v = $(id + '-value'), s = $(id + '-sub');
     v.textContent = value;
-    v.className = 'value' + (valueClass ? ' ' + valueClass : '');
+    // a long headline (for example a region name) gets a smaller size
+    v.className = 'value' + (valueClass ? ' ' + valueClass : '') + (String(value).length > 14 ? ' small' : '');
     s.textContent = sub || '';
     s.className = 'sub' + (subClass ? ' ' + subClass : '');
   }
@@ -378,20 +392,20 @@
     var firesLoading = app.status.fires === 'loading';
 
     if (forecastLoading) {
-      setLoading('kpi-tomorrow', 'Waiting for the forecast');
-      setLoading('kpi-peak', 'Waiting for the forecast');
-      if (firesLoading || !f) { setLoading('kpi-source', 'Waiting for the forecast'); }
+      setLoading('kpi-tomorrow', 'Waiting for forecast');
+      setLoading('kpi-peak', 'Waiting for forecast');
+      if (firesLoading || !f) { setLoading('kpi-source', 'Waiting for forecast'); }
     } else if (!out) {
-      setKpi('kpi-tomorrow', 'n/a', 'The forecast is not available right now');
-      setKpi('kpi-peak', 'n/a', 'The forecast is not available right now');
-      setKpi('kpi-source', 'n/a', 'The forecast is not available right now');
+      setKpi('kpi-tomorrow', 'n/a', 'Forecast not available');
+      setKpi('kpi-peak', 'n/a', 'Forecast not available');
+      setKpi('kpi-source', 'n/a', 'Forecast not available');
     } else {
       var tomorrow = out[1] || out[0];
       if (tomorrow.level === null) {
-        setKpi('kpi-tomorrow', 'n/a', 'PM2.5 forecast unavailable');
+        setKpi('kpi-tomorrow', 'n/a', 'PM2.5 not available');
       } else {
         setKpi('kpi-tomorrow', levelName(tomorrow.level),
-          'PM2.5 ' + Math.round(tomorrow.day.pm25) + ' µg/m³ · ' + dayLabel(tomorrow.day.date),
+          'PM2.5 ' + Math.round(tomorrow.day.pm25) + ' µg/m³ · ' + dayShort(tomorrow.day.date),
           'lvl-' + tomorrow.level);
       }
 
@@ -400,38 +414,39 @@
         if (o.day.pm25 !== null && (peak === null || o.day.pm25 > peak.day.pm25)) { peak = o; }
       });
       if (!peak) {
-        setKpi('kpi-peak', 'n/a', 'PM2.5 forecast unavailable');
+        setKpi('kpi-peak', 'n/a', 'PM2.5 not available');
       } else {
         setKpi('kpi-peak', dayLabel(peak.day.date),
-          levelName(peak.level) + ' · PM2.5 ' + Math.round(peak.day.pm25) + ' µg/m³',
+          levelName(peak.level) + ' · ' + Math.round(peak.day.pm25) + ' µg/m³',
           'lvl-' + peak.level);
       }
 
+      // short headline (a region) with the detail in small text below
       var sel = out[state.day] || out[0];
-      var when = dayLabel(sel.day.date);
+      var when = dayShort(sel.day.date);
+      var windNow = windShort(sel.day.wind850);
       if (firesLoading) {
-        setLoading('kpi-source', 'Waiting for the fire data');
+        setLoading('kpi-source', 'Waiting for fire data');
       } else if (!f) {
-        setKpi('kpi-source', 'n/a', 'The active fire data is not available right now');
+        setKpi('kpi-source', 'n/a', 'Fire data not available');
       } else if (!sel.day.wind850) {
-        setKpi('kpi-source', 'n/a', 'The wind forecast is not available right now');
+        setKpi('kpi-source', 'n/a', 'Wind not available');
       } else if (!sel.day.wind850.reliable) {
-        setKpi('kpi-source', 'None clear', 'Light and variable wind · ' + when);
+        setKpi('kpi-source', 'None clear', 'Light, variable wind · ' + when);
       } else if (sel.up.outsideShare >= OUTSIDE_SHARE_LIMIT) {
         // the upwind fires are in the Malay Peninsula (approximate outline), not in Indonesia
-        setKpi('kpi-source', 'No upwind source in Indonesia',
-          'Upwind fires are in the ' + PENINSULA_NAME + ' (approx.) · wind ' + windText(sel.day.wind850) + ' · ' + when, 'small');
+        setKpi('kpi-source', PENINSULA_NAME, 'No upwind source in Indonesia · ' + windNow + ' · ' + when);
       } else if (!sel.up.main) {
-        setKpi('kpi-source', 'None upwind', 'No active fires upwind, wind ' + windText(sel.day.wind850));
+        setKpi('kpi-source', 'None upwind', 'No active fires upwind · ' + windNow);
       } else {
-        setKpi('kpi-source', sel.up.main, 'Wind ' + windText(sel.day.wind850) + ' · ' + when);
+        setKpi('kpi-source', sel.up.main, 'Wind ' + windNow + ' · ' + when);
       }
     }
 
     if (firesLoading) {
-      setLoading('kpi-fires', 'Waiting for the fire data');
+      setLoading('kpi-fires', 'Waiting for fire data');
     } else if (!f) {
-      setKpi('kpi-fires', 'n/a', 'The active fire data is not available right now');
+      setKpi('kpi-fires', 'n/a', 'Fire data not available');
     } else {
       var pct = f.summary.pct_vs_usual;
       var sub = 'No seasonal reference', cls = '';
@@ -443,9 +458,9 @@
         ref = snpp === 0 ? null : 'S-NPP';
       }
       if (!ref) {
-        sub = 'No seasonal reference (no reference satellite data)';
+        sub = 'No seasonal reference';
       } else if (pct !== null && pct !== undefined) {
-        sub = (pct > 0 ? '+' : '') + Math.round(pct) + '% vs usual for the season · reference: ' + ref;
+        sub = (pct > 0 ? '+' : '') + Math.round(pct) + '% vs usual · ref. ' + ref;
         cls = pct > 0 ? 'up' : 'down';
       }
       setKpi('kpi-fires', fmt(f.summary.total_detections), sub, null, cls);
@@ -486,10 +501,12 @@
         '<div class="d-sub">' + (when || '&nbsp;') + '</div>' +
         levelHtml +
         '<div class="d-pm">' + (o.day.pm25 === null ? 'PM2.5 n/a' : 'PM2.5 ' + Math.round(o.day.pm25) + ' µg/m³') + '</div>' +
-        '<div class="d-wind">' + arrow + '<span>850 hPa ' + windText(w) + '</span></div>' +
+        // wind in one compact line: arrow and "NNW 5.8 m/s", with a small label
+        '<div class="d-wind">' + arrow + '<span class="d-wind-text"><span class="d-label">850 hPa wind</span>' +
+        '<span class="d-wind-value">' + windShort(w) + '</span></span></div>' +
         // the 10 m wind is only shown when it has a clear direction
-        (w10 && w10.reliable ? '<div class="d-fires">Surface: ' + compass(w10.dirFrom) + ' ' + w10.speed.toFixed(1) + ' m/s</div>' : '') +
-        '<div class="d-fires">Upwind fires: ' + (app.status.fires === 'loading' ? 'loading' : (app.fires ? fmt(o.up.count) : 'n/a')) + '</div>' +
+        (w10 && w10.reliable ? '<div class="d-fires">Surface ' + windShort(w10) + '</div>' : '') +
+        '<div class="d-fires">Upwind fires ' + (app.status.fires === 'loading' ? '...' : (app.fires ? fmt(o.up.count) : 'n/a')) + '</div>' +
         '</button>';
     }).join('');
   }
@@ -550,17 +567,21 @@
     });
   }
 
+  /** Two clear groups: fire intensity (FRP) and wind. */
   function buildMapLegend() {
     var items = [
-      ['--frp-1', 'Under 10 MW'], ['--frp-2', '10-30 MW'], ['--frp-3', '30-100 MW'], ['--frp-4', 'Over 100 MW']
+      ['--frp-1', 'Under 10 MW'], ['--frp-2', '10 to 30 MW'], ['--frp-3', '30 to 100 MW'], ['--frp-4', 'Over 100 MW']
     ];
     $('map-legend').innerHTML =
-      '<span class="item">Fire radiative power per cell, 7 days:</span>' +
+      '<div class="legend-group"><p class="legend-title">Fire intensity, 7 days (FRP)</p><div class="legend-row">' +
       items.map(function (it) {
         return '<span class="item"><span class="swatch" style="background:' + cssVar(it[0]) + '"></span>' + it[1] + '</span>';
       }).join('') +
-      '<span class="item"><span class="swatch cone"></span>Upwind sector (wind from, +/- ' + SECTOR_HALF_ANGLE + '°, up to ' + UPWIND_RADIUS_KM + ' km)</span>' +
-      '<span class="item"><span class="swatch outline"></span>Upwind fire cell</span>';
+      '</div></div>' +
+      '<div class="legend-group"><p class="legend-title">Wind</p><div class="legend-row">' +
+      '<span class="item"><span class="swatch cone"></span>Upwind sector (±' + SECTOR_HALF_ANGLE + '°, up to ' + UPWIND_RADIUS_KM + ' km)</span>' +
+      '<span class="item"><span class="swatch outline"></span>Upwind fire cell</span>' +
+      '</div></div>';
   }
 
   function initMap() {
