@@ -21,7 +21,7 @@
   var AQ_API = 'https://air-quality-api.open-meteo.com/v1/air-quality';
   var TIMEZONE = 'Asia%2FSingapore';
   var FORECAST_DAYS = 5;
-  var REQUEST_TIMEOUT_MS = 15000;
+  var REQUEST_TIMEOUT_MS = 8000;       // a slow request gives up after this long (no retry after a timeout)
 
   var CITIES = {
     singapore: { name: 'Singapore', latlng: [1.35, 103.82] },
@@ -56,6 +56,17 @@
   var MIN_CELL_VALUE = 1;              // season map: hide cells with less than one hotspot
   var CELL_SIZE = 0.25;
 
+  // Rough outline of the Malay Peninsula and Singapore as [lon, lat] pairs (approximate, about one
+  // grid cell of tolerance). The region boxes made by haze/fetch_active_fires.py overlap it, so cells
+  // inside this outline are named "Malay Peninsula" here, which is not Indonesia.
+  var PENINSULA_NAME = 'Malay Peninsula';
+  var PENINSULA = [
+    [99.6, 6.0], [99.0, 5.2], [99.5, 4.0], [100.8, 3.0], [101.75, 2.0], [102.6, 1.5], [103.3, 1.25],
+    [104.4, 1.25], [104.4, 2.5], [103.9, 3.5], [103.6, 5.5], [102.6, 6.0]
+  ];
+  // when at least this share of the upwind score lies outside Indonesia, say there is no source in Indonesia
+  var OUTSIDE_SHARE_LIMIT = 0.85;
+
   // Schematic southwest monsoon flow for the season map
   var MONSOON_ARROWS = [
     { from: [-2.6, 101.2], to: [0.2, 103.2] },
@@ -68,7 +79,11 @@
     risk: null,        // haze_risk.json
     fires: null,       // active_fires.json
     forecast: {},      // city key -> { days: [...] } (null when the forecast failed)
-    notes: [],         // discreet warnings shown at the top
+    // each source loads on its own: 'loading', 'ok' or 'failed'
+    status: { risk: 'loading', fires: 'loading', singapore: 'loading', kuala_lumpur: 'loading' },
+    notes: {},         // discreet warnings shown at the top, by key (plain language only)
+    regionNames: [],   // region names of the fire cells plus the Malay Peninsula
+    cellRegion: [],    // region index of every fire cell, after the peninsula check
     geo: {}            // city key -> distance and bearing of every fire cell
   };
   var state = {
@@ -77,8 +92,8 @@
     hist: { year: null, month: null, scope: 'both' }
   };
 
-  var map = null, cellLayer = null, overlayLayer = null, cityMarkers = {};
-  var histMap = null, histLayer = null, chart = null, histReady = false;
+  var map = null, cellLayer = null, overlayLayer = null, cityLayer = null, cityMarkers = {};
+  var histMap = null, histLayer = null, histStatic = null, chart = null, histReady = false;
 
   // ---------- small helpers ----------
 
@@ -90,22 +105,37 @@
   function levelColor(level) { return cssVar('--lvl-' + level); }
   function compass(deg) { return COMPASS[Math.round(deg / 22.5) % 16]; }
 
-  function note(message) { app.notes.push(message); }
+  /** Shows a plain-language notice (one per key). The technical detail only goes to the console. */
+  function note(key, message, detail) {
+    app.notes[key] = message;
+    if (detail !== undefined) { console.warn('[haze] ' + message, detail); }
+  }
 
-  /** GET a JSON file. Network errors and timeouts are retried once (not HTTP errors such as 404). */
+  /** GET a JSON file. A quick network error is retried once; a timeout or an HTTP error is not. */
   function fetchJson(url, retried) {
     var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, REQUEST_TIMEOUT_MS);
+    var timedOut = false;
+    var timer = setTimeout(function () { timedOut = true; ctrl.abort(); }, REQUEST_TIMEOUT_MS);
     return fetch(url, { signal: ctrl.signal }).then(function (r) {
       clearTimeout(timer);
       if (!r.ok) { throw new Error('HTTP ' + r.status); }
       return r.json();
     }, function (err) {
       clearTimeout(timer);
-      if (retried) { throw err; }
+      if (retried || timedOut) { throw timedOut ? new Error('timeout after ' + REQUEST_TIMEOUT_MS + ' ms') : err; }
       return new Promise(function (resolve) { setTimeout(resolve, 800); })
         .then(function () { return fetchJson(url, true); });
     });
+  }
+
+  /** Point in polygon test (ray casting) for [lon, lat] pairs. */
+  function insidePolygon(lon, lat, poly) {
+    var inside = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) { inside = !inside; }
+    }
+    return inside;
   }
 
   /** Great-circle distance in km. */
@@ -216,18 +246,28 @@
     });
   }
 
+  /** Loads the wind and PM2.5 forecast of one city. Shows the result as soon as it arrives. */
   function loadCity(key) {
     var city = CITIES[key];
     var wind = fetchJson(windUrl(city)).catch(function (err) {
-      note('Wind forecast for ' + city.name + ' could not be loaded (' + err.message + ').');
+      note(key + '-wind', 'The wind forecast for ' + city.name + ' is not available right now.', err);
       return null;
     });
     var aq = fetchJson(aqUrl(city)).catch(function (err) {
-      note('PM2.5 forecast for ' + city.name + ' could not be loaded (' + err.message + ').');
+      note(key + '-pm', 'The PM2.5 forecast for ' + city.name + ' is not available right now.', err);
       return null;
     });
     return Promise.all([wind, aq]).then(function (res) {
-      app.forecast[key] = { days: buildDays(res[0], res[1]), hasWind: !!res[0], hasPm: !!res[1] };
+      if (!res[0] && !res[1]) {
+        // both failed: one notice per city instead of two
+        delete app.notes[key + '-wind'];
+        delete app.notes[key + '-pm'];
+        note(key, 'The wind and PM2.5 forecast for ' + city.name + ' is not available right now.');
+      }
+      var days = buildDays(res[0], res[1]);
+      app.forecast[key] = { days: days, hasWind: !!res[0], hasPm: !!res[1] };
+      app.status[key] = days ? 'ok' : 'failed';
+      renderOutlook();
     });
   }
 
@@ -236,6 +276,18 @@
   function pmBand(pm) {
     for (var i = 0; i < PM_BANDS.length; i++) { if (pm < PM_BANDS[i].max) { return i; } }
     return PM_BANDS.length - 1;
+  }
+
+  /** Names every fire cell's region, replacing the box region by "Malay Peninsula" where it applies. */
+  function prepareFires() {
+    var f = app.fires, c = f.cells;
+    app.regionNames = f.region_names.concat([PENINSULA_NAME]);
+    var peninsulaIndex = app.regionNames.length - 1;
+    app.cellRegion = [];
+    for (var i = 0; i < c.lat.length; i++) {
+      app.cellRegion.push(insidePolygon(c.lon[i], c.lat[i], PENINSULA) ? peninsulaIndex : c.region[i]);
+    }
+    app.geo = {};
   }
 
   /** Distance and bearing from a city to every active fire cell (computed once). */
@@ -254,9 +306,11 @@
 
   /** Fires inside the upwind sector, their source score and the main source region. */
   function upwindFor(cityKey, wind) {
-    var res = { count: 0, frp: 0, score: 0, main: null, idx: [] };
+    // main: strongest source region in Indonesia; outsideShare: share of the score outside Indonesia
+    var res = { count: 0, frp: 0, score: 0, main: null, outsideShare: 0, idx: [] };
     if (!app.fires || !wind || !wind.reliable) { return res; }
     var cells = app.fires.cells, g = geoFor(cityKey), regionScore = {};
+    var peninsulaIndex = app.regionNames.length - 1, outside = 0;
     for (var i = 0; i < cells.lat.length; i++) {
       if (g.dist[i] > UPWIND_RADIUS_KM) { continue; }
       if (angleDiff(g.brg[i], wind.dirFrom) > SECTOR_HALF_ANGLE) { continue; }
@@ -264,14 +318,17 @@
       res.count += cells.count[i];
       res.frp += cells.frp[i];
       res.score += s;
-      regionScore[cells.region[i]] = (regionScore[cells.region[i]] || 0) + s;
+      if (app.cellRegion[i] === peninsulaIndex) { outside += s; } else {
+        regionScore[app.cellRegion[i]] = (regionScore[app.cellRegion[i]] || 0) + s;
+      }
       res.idx.push(i);
     }
     var best = null;
     Object.keys(regionScore).forEach(function (r) {
       if (best === null || regionScore[r] > regionScore[best]) { best = r; }
     });
-    if (best !== null) { res.main = app.fires.region_names[Number(best)]; }
+    if (best !== null) { res.main = app.regionNames[Number(best)]; }
+    res.outsideShare = res.score > 0 ? outside / res.score : 0;
     return res;
   }
 
@@ -309,14 +366,25 @@
     s.className = 'sub' + (subClass ? ' ' + subClass : '');
   }
 
+  /** Card state while a source is still loading: muted text and a soft pulse. */
+  function setLoading(id, what) {
+    setKpi(id, 'Loading', what, 'is-loading');
+  }
+
   function renderKpis() {
     var out = outlookFor(state.city);
     var f = app.fires;
+    var forecastLoading = app.status[state.city] === 'loading';
+    var firesLoading = app.status.fires === 'loading';
 
-    if (!out) {
-      setKpi('kpi-tomorrow', 'n/a', 'Forecast unavailable');
-      setKpi('kpi-peak', 'n/a', 'Forecast unavailable');
-      setKpi('kpi-source', 'n/a', 'Forecast unavailable');
+    if (forecastLoading) {
+      setLoading('kpi-tomorrow', 'Waiting for the forecast');
+      setLoading('kpi-peak', 'Waiting for the forecast');
+      if (firesLoading || !f) { setLoading('kpi-source', 'Waiting for the forecast'); }
+    } else if (!out) {
+      setKpi('kpi-tomorrow', 'n/a', 'The forecast is not available right now');
+      setKpi('kpi-peak', 'n/a', 'The forecast is not available right now');
+      setKpi('kpi-source', 'n/a', 'The forecast is not available right now');
     } else {
       var tomorrow = out[1] || out[0];
       if (tomorrow.level === null) {
@@ -340,21 +408,30 @@
       }
 
       var sel = out[state.day] || out[0];
-      if (!f) {
-        setKpi('kpi-source', 'n/a', 'Active fire data unavailable');
+      var when = dayLabel(sel.day.date);
+      if (firesLoading) {
+        setLoading('kpi-source', 'Waiting for the fire data');
+      } else if (!f) {
+        setKpi('kpi-source', 'n/a', 'The active fire data is not available right now');
       } else if (!sel.day.wind850) {
-        setKpi('kpi-source', 'n/a', 'Wind forecast unavailable');
+        setKpi('kpi-source', 'n/a', 'The wind forecast is not available right now');
       } else if (!sel.day.wind850.reliable) {
-        setKpi('kpi-source', 'None clear', 'Light and variable wind · ' + dayLabel(sel.day.date));
+        setKpi('kpi-source', 'None clear', 'Light and variable wind · ' + when);
+      } else if (sel.up.outsideShare >= OUTSIDE_SHARE_LIMIT) {
+        // the upwind fires are in the Malay Peninsula (approximate outline), not in Indonesia
+        setKpi('kpi-source', 'No upwind source in Indonesia',
+          'Upwind fires are in the ' + PENINSULA_NAME + ' (approx.) · wind ' + windText(sel.day.wind850) + ' · ' + when, 'small');
       } else if (!sel.up.main) {
         setKpi('kpi-source', 'None upwind', 'No active fires upwind, wind ' + windText(sel.day.wind850));
       } else {
-        setKpi('kpi-source', sel.up.main, 'Wind ' + windText(sel.day.wind850) + ' · ' + dayLabel(sel.day.date));
+        setKpi('kpi-source', sel.up.main, 'Wind ' + windText(sel.day.wind850) + ' · ' + when);
       }
     }
 
-    if (!f) {
-      setKpi('kpi-fires', 'n/a', 'Active fire data unavailable');
+    if (firesLoading) {
+      setLoading('kpi-fires', 'Waiting for the fire data');
+    } else if (!f) {
+      setKpi('kpi-fires', 'n/a', 'The active fire data is not available right now');
     } else {
       var pct = f.summary.pct_vs_usual;
       var sub = 'No seasonal reference', cls = '';
@@ -380,16 +457,23 @@
   function renderForecastStrip() {
     var strip = $('strip');
     $('strip-city').textContent = CITIES[state.city].name;
+    if (app.status[state.city] === 'loading') {
+      // five placeholder cards (team skeleton style) while the forecast is on its way
+      var cards = '';
+      for (var k = 0; k < FORECAST_DAYS; k++) { cards += '<div class="skeleton-card day-skeleton" aria-hidden="true"></div>'; }
+      strip.innerHTML = cards + '<p class="visually-hidden" role="status">Loading the 5-day forecast</p>';
+      return;
+    }
     var out = outlookFor(state.city);
     if (!out) {
-      strip.innerHTML = '<p class="hint">The forecast could not be loaded. The rest of the page still works.</p>';
+      strip.innerHTML = '<p class="hint">The 5-day forecast is not available right now. The rest of the page still works.</p>';
       return;
     }
     strip.innerHTML = out.map(function (o, i) {
       var w = o.day.wind850;
       var arrow = w && w.reliable
-        ? '<span class="wind-arrow" style="transform: rotate(' + ((w.dirFrom + 180) % 360) + 'deg)" title="Wind blows towards">&#8593;</span>'
-        : '<span class="wind-arrow">~</span>';
+        ? '<span class="wind-arrow" aria-hidden="true" style="transform: rotate(' + ((w.dirFrom + 180) % 360) + 'deg)">&#8593;</span>'
+        : '<span class="wind-arrow" aria-hidden="true">~</span>';
       var when = i === 0 ? 'Today' : (i === 1 ? 'Tomorrow' : '');
       var levelHtml = o.level === null
         ? '<div class="d-level muted">n/a</div>'
@@ -403,8 +487,9 @@
         levelHtml +
         '<div class="d-pm">' + (o.day.pm25 === null ? 'PM2.5 n/a' : 'PM2.5 ' + Math.round(o.day.pm25) + ' µg/m³') + '</div>' +
         '<div class="d-wind">' + arrow + '<span>850 hPa ' + windText(w) + '</span></div>' +
-        '<div class="d-fires">Surface: ' + (w10 && w10.reliable ? compass(w10.dirFrom) + ' ' + w10.speed.toFixed(1) + ' m/s' : 'variable') + '</div>' +
-        '<div class="d-fires">Upwind fires: ' + (app.fires ? fmt(o.up.count) : 'n/a') + '</div>' +
+        // the 10 m wind is only shown when it has a clear direction
+        (w10 && w10.reliable ? '<div class="d-fires">Surface: ' + compass(w10.dirFrom) + ' ' + w10.speed.toFixed(1) + ' m/s</div>' : '') +
+        '<div class="d-fires">Upwind fires: ' + (app.status.fires === 'loading' ? 'loading' : (app.fires ? fmt(o.up.count) : 'n/a')) + '</div>' +
         '</button>';
     }).join('');
   }
@@ -420,8 +505,10 @@
 
   /** Triangle marker pointing towards `bearing` (degrees clockwise from north). */
   function arrowHead(latlng, bearing) {
-    return L.marker(latlng, {
+    // decorative: no keyboard focus and hidden from screen readers
+    var marker = L.marker(latlng, {
       interactive: false,
+      keyboard: false,
       icon: L.divIcon({
         className: 'haze-arrow',
         html: '<div style="transform: rotate(' + bearing + 'deg)">&#9650;</div>',
@@ -429,29 +516,41 @@
         iconAnchor: [10, 10]
       })
     });
+    marker.on('add', function () {
+      var el = marker.getElement();
+      if (el) { el.setAttribute('aria-hidden', 'true'); el.removeAttribute('tabindex'); }
+    });
+    return marker;
   }
 
-  function addBasemap(m) {
-    // Dark basemap that needs no API key
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  // Esri basemaps that need no API key: dark for the dark mode, light gray for the light mode
+  var TILES = {
+    dark: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    light: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'
+  };
+  var tileLayers = {};   // 'main' and 'hist' basemaps, kept to swap them when the mode changes
+
+  /** The page follows the dashboard colour mode (data-mode="light" on <html>). */
+  function isLight() { return document.documentElement.dataset.mode === 'light'; }
+
+  function addBasemap(m, key) {
+    tileLayers[key] = L.tileLayer(isLight() ? TILES.light : TILES.dark, {
       attribution: 'Tiles &copy; Esri, HERE, Garmin, OpenStreetMap contributors',
       maxZoom: 12
     }).addTo(m);
   }
 
-  function initMap() {
-    map = L.map('map', { preferCanvas: true, scrollWheelZoom: false });
-    addBasemap(map);
-    map.fitBounds([[-6.5, 94.5], [6.5, 119]]);
-    cellLayer = L.layerGroup().addTo(map);
-    overlayLayer = L.layerGroup().addTo(map);
-    // the selected city is drawn in red (active state), the other one in blue
+  /** Marks Singapore and Kuala Lumpur; the ring colour follows the mode. */
+  function addCities(group, store) {
     Object.keys(CITIES).forEach(function (k) {
-      cityMarkers[k] = L.circleMarker(CITIES[k].latlng, {
-        radius: 7, color: '#ffffff', weight: 2, fillColor: cssVar('--blue'), fillOpacity: 1
+      store[k] = L.circleMarker(CITIES[k].latlng, {
+        radius: 7, color: cssVar('--text'), weight: 2, fillColor: cssVar('--blue'), fillOpacity: 1
       }).bindTooltip(CITIES[k].name, { permanent: true, direction: 'top', className: 'haze-label', offset: [0, -6] })
-        .addTo(map);
+        .addTo(group);
     });
+  }
+
+  function buildMapLegend() {
     var items = [
       ['--frp-1', 'Under 10 MW'], ['--frp-2', '10-30 MW'], ['--frp-3', '30-100 MW'], ['--frp-4', 'Over 100 MW']
     ];
@@ -464,11 +563,23 @@
       '<span class="item"><span class="swatch outline"></span>Upwind fire cell</span>';
   }
 
+  function initMap() {
+    map = L.map('map', { preferCanvas: true, scrollWheelZoom: false });
+    addBasemap(map, 'main');
+    map.fitBounds([[-6.5, 94.5], [6.5, 119]]);
+    cellLayer = L.layerGroup().addTo(map);
+    overlayLayer = L.layerGroup().addTo(map);
+    cityLayer = L.layerGroup().addTo(map);
+    addCities(cityLayer, cityMarkers);
+    buildMapLegend();
+  }
+
   function renderMap() {
     if (typeof L === 'undefined') { return; }
     if (!map) { initMap(); }
     cellLayer.clearLayers();
     overlayLayer.clearLayers();
+    // the selected city is drawn in red (active state), the other one in blue
     Object.keys(cityMarkers).forEach(function (k) {
       cityMarkers[k].setStyle({ fillColor: cssVar(k === state.city ? '--red' : '--blue') });
     });
@@ -479,23 +590,29 @@
     if (sel) { sel.up.idx.forEach(function (i) { upwindSet[i] = true; }); }
 
     var f = app.fires;
-    if (f) {
+    var light = isLight();
+    if (f && app.cellRegion.length) {
       var c = f.cells;
       // weakest first so strong cells are drawn on top
       for (var i = c.lat.length - 1; i >= 0; i--) {
         var half = CELL_SIZE / 2;
         var inSector = !!upwindSet[i];
+        // upwind cells get a strong outline; in the light mode every cell gets a thin one
+        // so the pale classes stay visible on the light basemap
         var rect = L.rectangle(
           [[c.lat[i] - half, c.lon[i] - half], [c.lat[i] + half, c.lon[i] + half]],
           {
-            stroke: inSector, color: '#ffffff', weight: 1, opacity: 0.85,
+            stroke: inSector || light,
+            color: inSector ? cssVar('--text') : cssVar('--text-2'),
+            weight: inSector ? 1.5 : 0.5,
+            opacity: inSector ? 0.9 : 0.45,
             fillColor: frpColor(c.frp[i]), fillOpacity: 0.85
           }
         );
         var last = new Date(f.period.start + 'T00:00:00');
         last.setDate(last.getDate() + c.last_day[i]);
         rect.bindTooltip(
-          f.region_names[c.region[i]] + '<br>' + fmt(c.count[i]) + ' detections · FRP ' + fmt(c.frp[i]) +
+          app.regionNames[app.cellRegion[i]] + '<br>' + fmt(c.count[i]) + ' detections · FRP ' + fmt(c.frp[i]) +
           ' MW<br>last: ' + last.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
           { sticky: true }
         );
@@ -511,8 +628,8 @@
         pts.push(destination(center, a, UPWIND_RADIUS_KM));
       }
       L.polygon(pts, {
-        color: cssVar('--blue'), weight: 1, dashArray: '5 5', fillColor: cssVar('--blue'),
-        fillOpacity: 0.10, interactive: false
+        color: cssVar('--blue'), weight: 1.5, dashArray: '5 5', fillColor: cssVar('--blue'),
+        fillOpacity: light ? 0.16 : 0.10, interactive: false
       }).addTo(overlayLayer);
       // arrow pointing at the city, ending clear of the city label
       var tail = destination(center, w.dirFrom, 560), head = destination(center, w.dirFrom, 170);
@@ -520,8 +637,14 @@
       arrowHead(head, (w.dirFrom + 180) % 360).addTo(overlayLayer);
       caption += ' · ' + dayLabel(sel.day.date) + ' · wind ' + windText(w);
     } else if (sel) {
-      caption += ' · ' + dayLabel(sel.day.date) + ' · ' + (sel.day.wind850 ? 'light and variable wind' : 'no wind data');
+      caption += ' · ' + dayLabel(sel.day.date) + ' · ' + (sel.day.wind850 ? 'light and variable wind' : 'wind forecast not available');
+    } else if (app.status[state.city] === 'loading') {
+      caption += ' · loading the wind forecast';
+    } else {
+      caption += ' · wind forecast not available';
     }
+    // cells are added after the city markers, so bring the markers back on top
+    Object.keys(cityMarkers).forEach(function (k) { cityMarkers[k].bringToFront(); });
     $('map-caption').textContent = caption;
   }
 
@@ -530,8 +653,12 @@
   function renderSeasonContext() {
     var box = $('season-context');
     var risk = app.risk;
+    if (app.status.risk === 'loading') {
+      box.innerHTML = '<p class="hint is-loading" role="status">Loading the season history</p>';
+      return;
+    }
     if (!risk) {
-      box.innerHTML = '<p class="hint">The historical risk index could not be loaded.</p>';
+      box.innerHTML = '<p class="hint">The season context is not available right now.</p>';
       return;
     }
     var last = risk.meta.last_month, i = risk.series.year.length - 1;
@@ -652,6 +779,7 @@
   }
 
   function renderHistoryChart() {
+    if (typeof Chart === 'undefined') { return; }
     var d = app.risk, s = state.hist;
     var i = seriesIndex(s.year, s.month);
     var level = d.series.scopes[s.scope].level[i];
@@ -759,37 +887,24 @@
     return { color: cssVar('--map-extreme'), label: 'Extreme' };
   }
 
-  function initHistMap() {
-    histMap = L.map('hist-map', { preferCanvas: true, scrollWheelZoom: false });
-    addBasemap(histMap);
-    histMap.fitBounds([[-7, 94], [7.5, 120]]);
-
+  /** Region boxes, city markers and monsoon arrows of the season map (colours follow the mode). */
+  function buildHistStatic() {
+    histStatic.clearLayers();
     Object.keys(app.risk.meta.regions).forEach(function (name) {
       var b = app.risk.meta.regions[name].bbox;
       L.rectangle([[b[1], b[0]], [b[3], b[2]]], {
         color: cssVar('--blue'), weight: 1, opacity: 0.6, dashArray: '4 4', fill: false, interactive: false
-      }).addTo(histMap);
+      }).addTo(histStatic);
     });
-    histLayer = L.layerGroup().addTo(histMap);
-    Object.keys(CITIES).forEach(function (k) {
-      L.circleMarker(CITIES[k].latlng, {
-        radius: 7, color: '#ffffff', weight: 2, fillColor: cssVar('--blue'), fillOpacity: 1
-      }).bindTooltip(CITIES[k].name, { permanent: true, direction: 'top', className: 'haze-label', offset: [0, -6] })
-        .addTo(histMap);
-    });
+    addCities(histStatic, {});
     MONSOON_ARROWS.forEach(function (a) {
-      L.polyline([a.from, a.to], { color: cssVar('--blue'), weight: 2.5, dashArray: '6 6', opacity: 0.9, interactive: false }).addTo(histMap);
+      L.polyline([a.from, a.to], { color: cssVar('--blue'), weight: 2.5, dashArray: '6 6', opacity: 0.9, interactive: false }).addTo(histStatic);
       var rotation = toDeg(Math.atan2(a.to[1] - a.from[1], a.to[0] - a.from[0]));
-      arrowHead(a.to, rotation).addTo(histMap);
+      arrowHead(a.to, rotation).addTo(histStatic);
     });
-    var noteCtl = L.control({ position: 'bottomleft' });
-    noteCtl.onAdd = function () {
-      var el = L.DomUtil.create('div', 'haze-note');
-      el.textContent = 'Southwest monsoon flow, Jun-Oct (schematic)';
-      return el;
-    };
-    noteCtl.addTo(histMap);
+  }
 
+  function buildHistLegend() {
     var items = [
       ['--map-below', 'Below median (under 0.5x)'], ['--map-typical', 'Typical (0.5-1.5x)'],
       ['--map-elevated', 'Elevated (1.5-3x)'], ['--map-high', 'High (3-6x)'],
@@ -800,6 +915,24 @@
     }).join('');
   }
 
+  function initHistMap() {
+    histMap = L.map('hist-map', { preferCanvas: true, scrollWheelZoom: false });
+    addBasemap(histMap, 'hist');
+    histMap.fitBounds([[-7, 94], [7.5, 120]]);
+    histLayer = L.layerGroup().addTo(histMap);
+    histStatic = L.layerGroup().addTo(histMap);
+    buildHistStatic();
+
+    var noteCtl = L.control({ position: 'bottomleft' });
+    noteCtl.onAdd = function () {
+      var el = L.DomUtil.create('div', 'haze-note');
+      el.textContent = 'Southwest monsoon flow, Jun-Oct (schematic)';
+      return el;
+    };
+    noteCtl.addTo(histMap);
+    buildHistLegend();
+  }
+
   function renderHistoryMap() {
     if (typeof L === 'undefined') { return; }
     if (!histMap) { initHistMap(); }
@@ -807,7 +940,7 @@
     var d = app.risk, s = state.hist, m = d.map;
     var values = m.values[String(s.year)];
     var wantRegion = s.scope === 'both' ? null : (s.scope === 'sumatra' ? 0 : 1);
-    var half = CELL_SIZE / 2, total = 0;
+    var half = CELL_SIZE / 2, total = 0, light = isLight();
 
     for (var k = 0; k < m.lat.length; k++) {
       if (wantRegion !== null && m.region[k] !== wantRegion) { continue; }
@@ -817,11 +950,14 @@
       var cls = seasonCellClass(v, m.median[k]);
       var rect = L.rectangle(
         [[m.lat[k] - half, m.lon[k] - half], [m.lat[k] + half, m.lon[k] + half]],
-        { stroke: false, fillColor: cls.color, fillOpacity: 0.78 }
+        // thin outline in the light mode keeps the pale classes visible on the light basemap
+        { stroke: light, color: cssVar('--text-2'), weight: 0.5, opacity: 0.45, fillColor: cls.color, fillOpacity: 0.78 }
       );
       rect.bindTooltip(cls.label + '<br>' + fmt(v) + ' hotspots (median ' + m.median[k].toFixed(1) + ')', { sticky: true });
       rect.addTo(histLayer);
     }
+    // cells were added after the cities and arrows: bring those back on top
+    histStatic.eachLayer(function (l) { if (l.bringToFront) { l.bringToFront(); } });
     $('hist-map-hint').textContent = s.year + ' June to October, ' + SCOPE_LABELS[s.scope] + ': ' +
       fmt(total) + ' hotspots. Each cell is compared with its own ' + d.meta.base_period.join('-') + ' median.';
   }
@@ -901,30 +1037,40 @@
   // ---------- header, notices, wiring ----------
 
   function renderStamp() {
-    var firesText = 'unavailable';
-    if (app.fires) {
+    var firesText;
+    if (app.status.fires === 'loading') {
+      firesText = 'loading';
+    } else if (!app.fires) {
+      firesText = 'unavailable';
+    } else {
       var gen = new Date(app.fires.generated_at);
       firesText = gen.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-      if (Date.now() - gen.getTime() > 36 * 3600 * 1000) { firesText += ' (old, rerun fetch_active_fires.py)'; }
+      if (Date.now() - gen.getTime() > 36 * 3600 * 1000) { firesText += ' (older than 36 hours)'; }
     }
     var keys = Object.keys(CITIES);
+    var loading = keys.some(function (k) { return app.status[k] === 'loading'; });
     var complete = keys.filter(function (k) { var f = app.forecast[k]; return f && f.days && f.hasWind && f.hasPm; }).length;
     var any = keys.filter(function (k) { var f = app.forecast[k]; return f && f.days; }).length;
-    var forecastText = complete === keys.length ? 'live' : (any === 0 ? 'unavailable' : 'partial');
+    var forecastText = loading ? 'loading' : (complete === keys.length ? 'live' : (any === 0 ? 'unavailable' : 'partial'));
     $('stamp').textContent = 'Fires: ' + firesText + ' · Forecast: ' + forecastText;
     if (app.risk) { $('generated').textContent = 'Risk index generated ' + app.risk.meta.generated + '.'; }
   }
 
   function renderNotices() {
-    $('notices').innerHTML = app.notes.map(function (n) { return '<p>' + n + '</p>'; }).join('');
+    $('notices').innerHTML = Object.keys(app.notes).map(function (k) { return '<p>' + app.notes[k] + '</p>'; }).join('');
   }
 
-  function renderAll() {
+  /** Everything that depends on the fires or on the forecast (redrawn as each one arrives). */
+  function renderOutlook() {
     renderStamp();
     renderNotices();
     renderKpis();
     renderForecastStrip();
     renderMap();
+  }
+
+  function renderAll() {
+    renderOutlook();
     renderSeasonContext();
     renderHistory();
   }
@@ -939,6 +1085,7 @@
     state.hist.month = last[1];
   }
 
+  /** Events that work from the start (city, day, history section). */
   function bindEvents() {
     $('sel-city').addEventListener('change', function (e) { state.city = e.target.value; renderKpis(); renderForecastStrip(); renderMap(); });
     $('strip').addEventListener('click', function (e) {
@@ -948,7 +1095,20 @@
       renderKpis(); renderForecastStrip(); renderMap();
     });
 
-    if (!app.risk) { $('history').hidden = true; return; }
+    // the history is built the first time the section is opened (charts and maps need a visible box);
+    // if the data is still loading it fills in when it arrives
+    $('history').addEventListener('toggle', function () {
+      if (!$('history').open) { return; }
+      var first = !histReady;
+      histReady = true;
+      renderHistory();
+      if (first && histMap) { histMap.invalidateSize(); }
+      if (chart) { chart.resize(); }
+    });
+  }
+
+  /** Events of the history controls, bound once the season data has arrived. */
+  function bindHistoryEvents() {
     $('sel-year').addEventListener('change', function (e) { setHist({ year: Number(e.target.value) }); });
     $('sel-month').addEventListener('change', function (e) { setHist({ month: Number(e.target.value) }); });
     $('sel-region').addEventListener('change', function (e) { setHist({ scope: e.target.value }); });
@@ -963,15 +1123,45 @@
     rankingEl.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(e); }
     });
+  }
 
-    // the history is built the first time the section is opened (charts and maps need a visible box)
-    $('history').addEventListener('toggle', function () {
-      if (!$('history').open) { return; }
-      var first = !histReady;
-      histReady = true;
-      renderHistory();
-      if (first && histMap) { histMap.invalidateSize(); }
-      if (chart) { chart.resize(); }
+  // ---------- colour mode (same behaviour as setupMode in ../app.js) ----------
+
+  /** Redraws everything that reads colours when the mode changes, without reloading. */
+  function applyMode() {
+    // basemaps
+    if (tileLayers.main) { tileLayers.main.setUrl(isLight() ? TILES.light : TILES.dark); }
+    if (tileLayers.hist) { tileLayers.hist.setUrl(isLight() ? TILES.light : TILES.dark); }
+    // map pieces that bake colours when they are created
+    if (cityLayer) {
+      cityLayer.clearLayers();
+      cityMarkers = {};
+      addCities(cityLayer, cityMarkers);
+      buildMapLegend();
+    }
+    if (histStatic) { buildHistStatic(); buildHistLegend(); }
+    // Chart.js reads the colours when it is created: build it again
+    if (chart) { chart.destroy(); chart = null; }
+    renderMap();
+    renderHistory();
+  }
+
+  /** Light / dark button: same markup, saved key and behaviour as the dashboard. */
+  function setupMode() {
+    var root = document.documentElement, btn = $('mode-btn'), label = btn.querySelector('.mode-label');
+    function sync() {
+      var light = root.dataset.mode === 'light';
+      btn.setAttribute('aria-pressed', String(light));
+      label.textContent = light ? 'Dark mode' : 'Light mode';
+      btn.setAttribute('aria-label', light ? 'Switch to dark mode' : 'Switch to light mode');
+      document.querySelector('meta[name="theme-color"]').setAttribute('content', getComputedStyle(root).getPropertyValue('--color-paper').trim());
+    }
+    sync();
+    btn.addEventListener('click', function () {
+      if (root.dataset.mode === 'light') { delete root.dataset.mode; } else { root.dataset.mode = 'light'; }
+      try { localStorage.setItem('ignisensing-mode', root.dataset.mode || 'dark'); } catch (e) { /* storage unavailable */ }
+      sync();
+      applyMode();
     });
   }
 
@@ -1023,27 +1213,59 @@
     });
   }
 
+  /** Colour key of "How to read this": the PM2.5 bands, built from PM_BANDS. */
+  function renderBandsLegend() {
+    $('howto-bands').innerHTML = PM_BANDS.map(function (b, i) {
+      var low = i === 0 ? null : PM_BANDS[i - 1].max;
+      var range = low === null ? 'under ' + b.max : (b.max === Infinity ? 'over ' + low : low + ' to ' + b.max);
+      return '<span class="item"><span class="swatch lvl-bg-' + i + '"></span><strong>' + b.name + '</strong>&nbsp;' + range + ' µg/m³</span>';
+    }).join('');
+  }
+
+  /** The season data (local file) arrived, or failed when `d` is null. */
+  function onRisk(d) {
+    app.risk = d;
+    app.status.risk = d ? 'ok' : 'failed';
+    if (d) {
+      fillHistorySelects();
+      bindHistoryEvents();
+    } else {
+      $('history').closest('section').hidden = true;
+    }
+    renderStamp();
+    renderNotices();
+    renderSeasonContext();
+    renderHistory();
+  }
+
+  /** The active fires (local file) arrived, or failed when `d` is null. */
+  function onFires(d) {
+    app.fires = d;
+    app.status.fires = d ? 'ok' : 'failed';
+    if (d) { prepareFires(); }
+    renderOutlook();
+  }
+
+  /** Each source draws its part of the page when it arrives, so a slow one never blocks the rest. */
   function init() {
+    setupMode();
     setupSidebar();
-    if (typeof L === 'undefined') { note('The map library could not be loaded. Check your connection and reload.'); }
-    if (typeof Chart === 'undefined') { note('The chart library could not be loaded. Check your connection and reload.'); }
+    bindEvents();
+    if (typeof L === 'undefined') { note('map-lib', 'The map could not be loaded. Check your connection and reload the page.'); }
+    if (typeof Chart === 'undefined') { note('chart-lib', 'The chart could not be loaded. Check your connection and reload the page.'); }
+    renderBandsLegend();
+    renderAll();   // shows the loading state of every card
 
-    var risk = fetchJson(RISK_URL).catch(function (err) {
-      note('Historical risk data could not be loaded (' + err.message + ').');
-      return null;
+    fetchJson(RISK_URL).then(onRisk, function (err) {
+      note('risk', 'The season history is not available right now.', err);
+      onRisk(null);
     });
-    var fires = fetchJson(FIRES_URL).catch(function (err) {
-      note('Active fire data could not be loaded (' + err.message + '). Run haze/fetch_active_fires.py to create it.');
-      return null;
+    fetchJson(FIRES_URL).then(onFires, function (err) {
+      note('fires', 'The active fire data is not available right now.', err);
+      onFires(null);
     });
-
-    Promise.all([risk, fires, loadCity('singapore'), loadCity('kuala_lumpur')]).then(function (res) {
-      app.risk = res[0];
-      app.fires = res[1];
-      if (app.risk) { fillHistorySelects(); }
-      bindEvents();
-      renderAll();
-    });
+    loadCity('singapore');
+    loadCity('kuala_lumpur');
   }
 
   init();
