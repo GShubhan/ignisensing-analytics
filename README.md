@@ -28,6 +28,7 @@ Each folder has its own README with tasks. Work mostly inside your own folder to
 - **Jasmine**: data pipeline + cleaning, dashboard design sketch
 - **Shubhan**: harmonization ML model
 - **Ayska, Luis, Nguyen**: dashboard
+- **Jasmine, Ayska**: submission slides deck
 - **Luis**: communication lead + submission
 - **Data visualisation**: _owner TBD_
 
