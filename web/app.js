@@ -1522,9 +1522,7 @@ function renderAnomaly() {
   const months = p.months;
   const c = compare(ser, state.year, months);
   const data = c.totals.map((t) => ({ ...t, diff: c.median > 0 ? ((t.value - c.median) / c.median) * 100 : 0 }));
-  // the month that follows the filter is highlighted in the fire colour
-  title.replaceChildren(document.createTextNode("Each year against the median"),
-    ...(p.span === "Annual" ? [] : [document.createTextNode(", "), html("span", { class: "title-month", text: p.span })]));
+  title.textContent = `Each year against the median${p.span === "Annual" ? "" : `, ${p.span}`}`;
   sub.textContent = `${areaName(state.area)}. Difference from the ${baseLabel()} median of ${fmt(c.median)} detections.${p.status !== "ok" ? ` ${p.label} is not complete, so it is not shown.` : ""}`;
   exporters.anomaly = () => [["year", "detections", "median", "difference_pct"], ...data.map((d) => [d.year, d.value.toFixed(1), c.median?.toFixed(1), d.diff.toFixed(1)])];
   legend(lg, [{ colour: C.fire, label: "Above the median", kind: "rect" }, { colour: C.cool[2], label: "Below the median", kind: "rect" }]);
