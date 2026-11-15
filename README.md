@@ -119,8 +119,11 @@ Each folder has its own README with details.
 | NASA Blue Marble shaded relief and bathymetry, via [NASA GIBS](https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api) | Dashboard map background |
 | [Open-Meteo](https://open-meteo.com/) forecast API (850 hPa and 10 m wind) | Haze outlook: smoke transport direction |
 | [Open-Meteo](https://open-meteo.com/) air quality API, from the Copernicus Atmosphere Monitoring Service ([CAMS](https://atmosphere.copernicus.eu/)) global forecast | Haze outlook: PM2.5 forecast |
-| Esri map tiles | Haze outlook map background |
+| Esri World Light Gray and Dark Gray Canvas basemap tiles (ArcGIS Online; © Esri, HERE, Garmin, OpenStreetMap contributors) | Haze outlook map background |
 | Indonesia province boundaries (34 provinces, pre-2022), public GeoJSON | Province totals, province zoom, watchlist |
+| [Inter](https://fonts.google.com/specimen/Inter) typeface via Google Fonts | Dashboard text |
+
+The haze outlook also links to the official air quality services, [Singapore NEA](https://www.haze.gov.sg/) and [Malaysia DOE APIMS](https://eqms.doe.gov.my/APIMS/main), for authoritative readings; no data is taken from them.
 
 We acknowledge the use of data and imagery from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's Earth Science Data and Information System (ESDIS).
 
