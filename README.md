@@ -12,25 +12,30 @@ Satellites have tracked active fire hotspots for more than 20 years. The record 
    - anomalies against the multi-year median
    - downloadable CSV and visualizations
 
+**Live site:** https://ignisensing-analytics-web.vercel.app/
+
 ## Repository layout
 
-| Folder | What | Owner |
+| Folder | What | Main contributors |
 |---|---|---|
 | [`data/`](data/) | FIRMS download, cleaning pipeline, shared data format ([SCHEMA.md](data/SCHEMA.md)) | Jasmine |
-| [`ml/`](ml/) | MODIS ↔ VIIRS harmonization model | Shubhan |
-| [`web/`](web/) | Dashboard website (auto-deployed on Vercel) | Ayska, Luis, Nguyen |
-| [`docs/`](docs/) | Submission write-up, screenshots, demo video | Luis |
+| [`ml/`](ml/) | MODIS ↔ VIIRS harmonization model and its evaluation | Shubhan |
+| [`web/`](web/) | Dashboard website and haze outlook (auto-deployed on Vercel) | David, Shubhan |
+| [`haze/`](haze/) | Scripts that build the haze outlook data | David |
+| [`docs/`](docs/) | Data quality filters, haze method, submission material | David, Luis |
 
-Each folder has its own README with tasks. Work mostly inside your own folder to avoid merge conflicts.
+Each folder has its own README.
 
-## Team
+## Team contributions
 
-- **Jasmine**: data pipeline + cleaning, dashboard design sketch
-- **Shubhan**: harmonization ML model
-- **Ayska, Luis, Nguyen**: dashboard
-- **Jasmine, Ayska**: submission slides deck
-- **Luis**: communication lead + submission
-- **Data visualisation**: _owner TBD_
+| Team member | Contributions |
+|---|---|
+| **Jasmine** | FIRMS data pipeline: download, cleaning and verification scripts; vegetation flag and static heat-source mask; dashboard design sketch; presentation slides and demo video (with Ayska) |
+| **Shubhan** | Repository, Vercel and shared data schema setup; MODIS ↔ VIIRS harmonization model (feature search, leave-one-year-out validation, ratio + LightGBM blend); raw vs harmonized calendar comparison; custom area of interest (coordinates or drawn on the map) |
+| **David** | MODIS/VIIRS data quality filters; dashboard frontend (overview, activity calendar, fire map, historical analysis, priority watchlist); haze outlook for Singapore and Kuala Lumpur |
+| **Ayska** | Presentation slides and demo video (with Jasmine) |
+| **Nguyen** | Landing page introduction and feature list |
+| **Luis** | Communication lead: team coordination, mentor contact and project submission |
 
 ## Data sources
 
