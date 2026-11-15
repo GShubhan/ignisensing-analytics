@@ -1,307 +1,217 @@
-/* Haze Outlook page, team design guide.
-   All colours, fonts and spacing are variables in this block. The page has no
-   sidebar of its own: it is a single column of about 1200 px that fits inside
-   the team layout (fixed sidebar of about 210 px). */
+/* Haze outlook page.
+   Loaded after the dashboard styles (../tokens.css, ../base.css, ../style.css), which
+   draw the sidebar, the top bar, cards, buttons, selects and the footer. Everything
+   here is scoped to the page content (main.haze), the footer (.haze-footer) and the
+   city selector in the top bar (.haze-city), so the dashboard styles are not changed.
+   Colours, fonts, radii and borders come from the dashboard tokens; only values
+   without a team equivalent are set here. The page stays in dark mode: it never
+   sets [data-mode="light"], because the map tiles and fire scale need a dark base. */
 :root {
-  /* palette from the design guide */
-  --bg: #020b18;
-  --sidebar: #061529;            /* used by the team layout, kept for reference */
-  --card: #0b1e33;
-  --blue: #60bfff;               /* icons, borders, info, references */
-  --red: #e53935;                /* main actions, alerts, active state */
-  --orange: #ff8a24;             /* fires, charts, highlights */
-  --text: #f5f7fa;
-  --text-2: #b7c5d5;
+  /* team tokens under the names used in this file and in haze.js */
+  --bg: var(--color-paper);
+  --card: var(--color-paper-2);
+  --card-alt: var(--color-paper-3);
+  --text: var(--color-ink);
+  --text-2: var(--color-ink-2);
+  --muted: var(--color-muted);
+  --blue: var(--color-info);
+  --red: var(--color-accent);
+  --orange: var(--color-fire);
+  --red-text: var(--color-error);      /* light red for small text, readable on the cards */
+  --line: var(--color-rule);
+  --line-strong: var(--color-rule-strong);
+  --grid: var(--color-rule);
+  --radius: var(--radius-card);
+  --radius-ctl: var(--radius-control);
+  --font-title: var(--font-display);
 
-  /* derived tones */
-  --red-text: #ff6b66;           /* red for small text: 6:1 on the card (the guide red is 4:1) */
-  --amber: #ffc247;
-  --card-alt: #0f2741;
-  --line: rgba(96, 191, 255, 0.18);   /* thin light blue card border */
-  --grid: rgba(96, 191, 255, 0.10);   /* chart grid */
-  --shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  --nrt: #ffc48a;                /* near real-time months on the chart (dashed) */
+  /* near real-time months on the chart (dashed) */
+  --nrt: var(--ramp-5);
 
   /* risk levels: Low, Moderate, High, Very high */
-  --lvl-0: var(--blue);
-  --lvl-1: var(--amber);
-  --lvl-2: var(--orange);
-  --lvl-3: var(--red);
+  --lvl-0: var(--color-info);
+  --lvl-1: var(--ramp-5);
+  --lvl-2: var(--color-fire);
+  --lvl-3: var(--color-accent);
 
-  /* heat scale (FRP and season heatmap): pale yellow, orange, red, dark red */
-  --heat-1: #fff1a8;
-  --heat-2: #ff8a24;
-  --heat-3: #e53935;
-  --heat-4: #8e1414;
+  /* fire map: FRP per cell, team fire ramp (brighter = more intense) */
+  --frp-1: var(--ramp-3);
+  --frp-2: var(--ramp-4);
+  --frp-3: var(--ramp-5);
+  --frp-4: var(--ramp-6);
 
-  /* fire map: FRP per cell */
-  --frp-1: var(--heat-1);
-  --frp-2: var(--heat-2);
-  --frp-3: var(--heat-3);
-  --frp-4: var(--heat-4);
+  /* season map: activity versus the cell median (team diverging colours) */
+  --map-below: var(--cool-3);
+  --map-typical: var(--diverge-mid);
+  --map-elevated: var(--ramp-3);
+  --map-high: var(--ramp-4);
+  --map-extreme: var(--ramp-6);
+  --map-new: var(--color-muted);
 
-  /* season map: activity versus the cell median */
-  --map-below: var(--blue);
-  --map-typical: var(--heat-1);
-  --map-elevated: var(--heat-2);
-  --map-high: var(--heat-3);
-  --map-extreme: var(--heat-4);
-  --map-new: var(--text-2);
-
-  /* type */
-  --font-title: "League Spartan", "Inter", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --fs-page: 36px;
+  /* own values (no team equivalent) */
+  --cone-fill: rgba(96, 191, 255, 0.22);   /* legend swatch of the upwind sector */
+  --map-bg: #01060e;
   --fs-section: 22px;
   --fs-card: 16px;
   --fs-text: 15px;
   --fs-small: 13px;
-
-  /* shape and spacing */
-  --radius: 14px;
-  --gap-cards: 20px;
-  --gap-sections: 40px;
-  --content-width: 1200px;
 }
 
-* { box-sizing: border-box; }
+/* ---------- top bar: city selector and data stamp ---------- */
+.haze-city select { min-width: 160px; }
 
-body {
-  margin: 0;
-  font-family: var(--font-body);
-  font-size: var(--fs-text);
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.5;
-}
-
-a { color: var(--red-text); font-weight: 600; }
-a:hover { color: var(--text); }
-.muted { color: var(--text-2); font-weight: 400; }
-
-/* ---------- header (kept simple to sit under the team navigation) ---------- */
-.page-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px 24px;
-  align-items: flex-end;
-  justify-content: space-between;
-  max-width: var(--content-width);
-  margin: 0 auto;
-  padding: 32px 24px 0;
-}
-.page-header h1 {
-  margin: 0;
-  font-family: var(--font-title);
-  font-size: var(--fs-page);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  line-height: 1.1;
-}
-.page-header .subtitle { margin: 6px 0 0; color: var(--text-2); font-size: 16px; }
-.head-controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; }
-.stamp { margin: 0 0 10px; color: var(--text-2); font-size: var(--fs-small); }
-
-main {
-  max-width: var(--content-width);
-  margin: 0 auto;
-  padding: 32px 24px 48px;
+/* ---------- page content ---------- */
+.haze {
   display: grid;
-  gap: var(--gap-sections);
+  gap: var(--space-xl);
+  font-size: var(--fs-text);
 }
-main > * { min-width: 0; }
+.haze > * { min-width: 0; }
+.haze .muted { color: var(--text-2); font-weight: 400; }
+.haze p { max-width: none; }
 
-/* ---------- cards and titles ---------- */
-.card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 20px 22px;
-}
-
-.section-title {
+.haze .section-title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
-  margin: 0 0 16px;
+  margin: 0 0 var(--space-md);
   font-family: var(--font-title);
   font-size: var(--fs-section);
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
   line-height: 1.2;
 }
-.section-title .muted {
+.haze .section-title .muted {
   font-family: var(--font-body);
   font-size: var(--fs-text);
   text-transform: none;
   letter-spacing: 0;
 }
-.card-title {
+.haze .card-title {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0 0 10px;
   font-family: var(--font-title);
   font-size: var(--fs-card);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-2);
 }
-.ico { width: 20px; height: 20px; color: var(--blue); flex: none; }
-.card-title .ico { width: 17px; height: 17px; }
-.sub-title {
+.haze .ico { width: 20px; height: 20px; color: var(--blue); flex: none; }
+.haze .card-title .ico { width: 17px; height: 17px; }
+.haze .sub-title {
   margin: 28px 0 4px;
   font-family: var(--font-title);
   font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
-.hint { margin: 0 0 12px; color: var(--text-2); font-size: 14px; }
-
-/* ---------- controls and buttons ---------- */
-.field { display: grid; gap: 4px; }
-.field label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-select {
-  font: inherit;
-  color: var(--text);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 8px 12px;
-  min-height: 42px;
-}
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font: inherit;
-  font-weight: 600;
-  min-height: 42px;
-  padding: 8px 18px;
-  border-radius: 10px;
-  cursor: pointer;
-  text-decoration: none;
-}
-.btn-primary { background: var(--red); border: 1px solid var(--red); color: #ffffff; }
-.btn-primary:hover { background: #c62f2b; border-color: #c62f2b; }
-.btn-secondary { background: transparent; border: 1px solid var(--blue); color: var(--text); }
-.btn-secondary:hover { background: rgba(96, 191, 255, 0.10); }
-select:focus-visible, .btn:focus-visible, .day:focus-visible, .rank-row:focus-visible, summary:focus-visible, a:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
-}
-.controls { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; }
-.controls .spacer { flex: 1; }
+.haze .hint { margin: 0 0 12px; color: var(--text-2); font-size: 14px; }
+.haze .controls { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; }
+.haze .controls .spacer { flex: 1; }
 
 /* ---------- notices ---------- */
-.notices:empty { display: none; }
-.notices { display: grid; gap: 6px; font-size: 14px; color: var(--text-2); }
-.notices p {
+.haze .notices:empty { display: none; }
+.haze .notices { display: grid; gap: 6px; font-size: 14px; color: var(--text-2); }
+.haze .notices p {
   margin: 0;
   padding: 8px 14px;
   border-left: 3px solid var(--blue);
   background: var(--card);
-  border-radius: 8px;
+  border-radius: var(--radius-ctl);
 }
 
 /* ---------- KPI cards ---------- */
-.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap-cards); }
-.kpi .value {
+.haze .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-lg); }
+.haze .kpi { display: block; min-height: 0; }
+.haze .kpi .value {
   font-family: var(--font-title);
   font-size: 32px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.1;
-  letter-spacing: 0.01em;
 }
-.kpi .sub { margin-top: 6px; font-size: 14px; color: var(--text-2); }
-.kpi .sub.up { color: var(--red-text); }
-.kpi .sub.down { color: var(--blue); }
+.haze .kpi .sub { margin-top: 6px; font-size: 14px; color: var(--text-2); }
+.haze .kpi .sub.up { color: var(--red-text); }
+.haze .kpi .sub.down { color: var(--blue); }
 
-/* level colours: only used on large bold text (19 px and up), see the contrast note in the docs */
-.lvl-0 { color: var(--lvl-0); }
-.lvl-1 { color: var(--lvl-1); }
-.lvl-2 { color: var(--lvl-2); }
-.lvl-3 { color: var(--lvl-3); }
+/* level colours: only used on large text (19 px and up) */
+.haze .lvl-0 { color: var(--lvl-0); }
+.haze .lvl-1 { color: var(--lvl-1); }
+.haze .lvl-2 { color: var(--lvl-2); }
+.haze .lvl-3 { color: var(--lvl-3); }
 
 /* ---------- 5 day strip ---------- */
-.strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
-.day {
+.haze .strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-md); }
+.haze .day {
   background: var(--card);
-  border: 1px solid var(--line);
+  border: var(--rule-hair) solid var(--line);
   border-top: 4px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
   padding: 14px 14px 12px;
   text-align: left;
   color: inherit;
   font: inherit;
   cursor: pointer;
 }
-.day:hover { background: var(--card-alt); }
-.day.selected { border-color: var(--red); background: var(--card-alt); }
-.day[data-level="0"] { border-top-color: var(--lvl-0); }
-.day[data-level="1"] { border-top-color: var(--lvl-1); }
-.day[data-level="2"] { border-top-color: var(--lvl-2); }
-.day[data-level="3"] { border-top-color: var(--lvl-3); }
-.day.selected[data-level] { border-left-color: var(--red); border-right-color: var(--red); border-bottom-color: var(--red); }
-.day .d-name { font-family: var(--font-title); font-size: 17px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
-.day .d-sub { font-size: var(--fs-small); color: var(--text-2); }
-.day .d-level { margin-top: 8px; font-family: var(--font-title); font-weight: 700; font-size: 20px; }
-.day .d-pm { font-size: 14px; color: var(--text); }
-.day .d-wind { margin-top: 8px; display: flex; align-items: center; gap: 8px; font-size: var(--fs-small); color: var(--text-2); }
-.wind-arrow {
+.haze .day:hover { background: var(--card-alt); }
+.haze .day.selected { border-color: var(--color-active); background: var(--card-alt); }
+.haze .day[data-level="0"] { border-top-color: var(--lvl-0); }
+.haze .day[data-level="1"] { border-top-color: var(--lvl-1); }
+.haze .day[data-level="2"] { border-top-color: var(--lvl-2); }
+.haze .day[data-level="3"] { border-top-color: var(--lvl-3); }
+.haze .day.selected[data-level] { border-left-color: var(--color-active); border-right-color: var(--color-active); border-bottom-color: var(--color-active); }
+.haze .day .d-name { font-family: var(--font-title); font-size: 17px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+.haze .day .d-sub { font-size: var(--fs-small); color: var(--text-2); }
+.haze .day .d-level { margin-top: 8px; font-family: var(--font-title); font-weight: 600; font-size: 20px; }
+.haze .day .d-pm { font-size: 14px; color: var(--text); }
+.haze .day .d-wind { margin-top: 8px; display: flex; align-items: center; gap: 8px; font-size: var(--fs-small); color: var(--text-2); }
+.haze .wind-arrow {
   display: inline-block;
   width: 28px;
   height: 28px;
   line-height: 28px;
   text-align: center;
-  border: 1px solid var(--blue);
+  border: var(--rule-hair) solid var(--blue);
   border-radius: 50%;
   color: var(--blue);
   font-size: 15px;
   flex: none;
 }
-.day .d-fires { margin-top: 6px; font-size: var(--fs-small); color: var(--text-2); }
+.haze .day .d-fires { margin-top: 6px; font-size: var(--fs-small); color: var(--text-2); }
 
 /* ---------- maps ---------- */
-#map, #hist-map {
+.haze #map, .haze #hist-map {
   height: 480px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: #01060e;
+  border-radius: var(--radius-ctl);
+  border: var(--rule-hair) solid var(--line);
+  background: var(--map-bg);
 }
-#hist-map { height: 420px; }
-.legend {
+.haze #hist-map { height: 420px; }
+.haze .legend {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 16px;
-  margin-top: 12px;
+  margin: 12px 0 0;
   font-size: var(--fs-small);
   color: var(--text-2);
 }
-.legend .item { display: inline-flex; align-items: center; gap: 6px; }
-.legend .swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
-.legend .swatch.cone { background: rgba(96, 191, 255, 0.25); border: 1px dashed var(--blue); }
-.legend .swatch.outline { background: var(--heat-2); outline: 1px solid #ffffff; }
+.haze .legend .item { display: inline-flex; align-items: center; gap: 6px; }
+.haze .legend .swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+.haze .legend .swatch.cone { background: var(--cone-fill); border: 1px dashed var(--blue); }
+.haze .legend .swatch.outline { background: var(--frp-2); outline: 1px solid #ffffff; }
 
-.leaflet-container { font-family: var(--font-body); }
+/* Leaflet pieces (rendered inside the maps) */
+.haze .leaflet-container { font-family: var(--font-body); }
+.haze .leaflet-container img { max-width: none; }
 .leaflet-tooltip.haze-label {
   background: var(--card);
   color: var(--text);
-  border: 1px solid var(--line);
+  border: var(--rule-hair) solid var(--line);
   box-shadow: none;
   font-weight: 600;
 }
@@ -311,95 +221,91 @@ select:focus-visible, .btn:focus-visible, .day:focus-visible, .rank-row:focus-vi
 .haze-note {
   background: var(--card);
   color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: var(--rule-hair) solid var(--line);
+  border-radius: var(--radius-ctl);
   padding: 6px 10px;
   font-size: 12px;
 }
 
 /* ---------- season context ---------- */
-.context { display: flex; flex-wrap: wrap; gap: 12px 48px; align-items: baseline; }
-.context .big { font-family: var(--font-title); font-size: 26px; font-weight: 700; letter-spacing: 0.02em; }
-.context .line { color: var(--text-2); }
-.badge {
+.haze .context { display: flex; flex-wrap: wrap; gap: 12px 48px; align-items: baseline; }
+.haze .context .big { font-family: var(--font-title); font-size: 26px; font-weight: 600; }
+.haze .context .line { color: var(--text-2); }
+.haze .badge {
   display: inline-block;
+  min-height: 0;
   font-size: 12px;
+  font-weight: 500;
   padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  border: var(--rule-hair) solid var(--line-strong);
   color: var(--text-2);
   margin-left: 4px;
+  white-space: nowrap;
 }
-.badge.haze { border-color: var(--orange); color: var(--orange); }
-.badge.nrt { border-color: var(--nrt); color: var(--nrt); }
+.haze .badge.haze-year { border-color: var(--orange); color: var(--orange); }
+.haze .badge.nrt { border-color: var(--nrt); color: var(--nrt); }
 
 /* ---------- collapsible history ---------- */
-.history { padding: 16px 22px; }
-.history > summary { list-style: none; width: fit-content; }
-.history > summary::-webkit-details-marker { display: none; }
-.history .when-open { display: none; }
-.history[open] .when-open { display: inline; }
-.history[open] .when-closed { display: none; }
-.history > .hint-line { margin: 10px 0 0; }
-.history-body { margin-top: 8px; }
-.chart-box { position: relative; height: 320px; }
-.split { display: grid; grid-template-columns: 1.7fr 1fr; gap: var(--gap-cards); }
-.split > * { min-width: 0; }
+.haze .history { padding: var(--space-md) var(--space-lg); }
+.haze .history > summary { list-style: none; width: fit-content; }
+.haze .history > summary::-webkit-details-marker { display: none; }
+.haze .history .when-open { display: none; }
+.haze .history[open] .when-open { display: inline; }
+.haze .history[open] .when-closed { display: none; }
+.haze .history > .hint-line { margin: 10px 0 0; }
+.haze .history-body { margin-top: 8px; }
+.haze .chart-box { position: relative; height: 320px; }
+.haze .split { display: grid; grid-template-columns: 1.7fr 1fr; gap: var(--space-lg); }
+.haze .split > * { min-width: 0; }
 
 /* ---------- ranking ---------- */
-.rank-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.rank-row {
+.haze .rank-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.haze .rank-row {
   display: grid;
   grid-template-columns: 28px 52px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   padding: 6px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-ctl);
   cursor: pointer;
-  border: 1px solid transparent;
+  border: var(--rule-hair) solid transparent;
 }
-.rank-row:hover { background: var(--card-alt); }
-.rank-row.selected { border-color: var(--red); background: var(--card-alt); }
-.rank-row .pos { color: var(--text-2); font-variant-numeric: tabular-nums; }
-.rank-row .year { font-family: var(--font-title); font-weight: 700; font-size: 17px; }
-.rank-bar { display: block; height: 10px; border-radius: 5px; background: var(--grid); overflow: hidden; }
-.rank-bar > span { display: block; height: 100%; border-radius: 5px; }
-.rank-row .meta { font-size: var(--fs-small); color: var(--text-2); text-align: right; white-space: nowrap; }
+.haze .rank-row:hover { background: var(--card-alt); }
+.haze .rank-row.selected { border-color: var(--color-active); background: var(--card-alt); }
+.haze .rank-row .pos { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.haze .rank-row .year { font-family: var(--font-title); font-weight: 600; font-size: 17px; }
+.haze .rank-bar { display: block; height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.haze .rank-bar > span { display: block; height: 100%; border-radius: 5px; }
+.haze .rank-row .meta { font-size: var(--fs-small); color: var(--text-2); text-align: right; white-space: nowrap; }
 
-/* ---------- footer ---------- */
-footer {
-  max-width: var(--content-width);
-  margin: 0 auto;
-  padding: 0 24px 48px;
-  color: var(--text-2);
-  font-size: var(--fs-small);
-}
-footer p { margin: 6px 0; }
+/* ---------- footer (team .footer, plus link colour) ---------- */
+.haze-footer p { margin: 6px 0; max-width: none; }
+.haze-footer a { color: var(--red-text); font-weight: 600; }
+.haze-footer a:hover { color: var(--text); }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1000px) {
-  .kpis { grid-template-columns: repeat(2, 1fr); }
-  .split { grid-template-columns: 1fr; }
-  #map { height: 400px; }
-  #hist-map { height: 380px; }
-  .chart-box { height: 280px; }
+  .haze .kpis { grid-template-columns: repeat(2, 1fr); }
+  .haze .split { grid-template-columns: 1fr; }
+  .haze #map { height: 400px; }
+  .haze #hist-map { height: 380px; }
+  .haze .chart-box { height: 280px; }
 }
 
 @media (max-width: 760px) {
-  :root { --fs-page: 30px; --fs-section: 20px; --gap-sections: 32px; }
+  :root { --fs-section: 20px; }
+  .haze { gap: var(--space-lg); }
   /* the five days scroll sideways instead of squeezing */
-  .strip { display: flex; overflow-x: auto; gap: 12px; padding-bottom: 8px; scroll-snap-type: x proximity; }
-  .day { flex: 0 0 168px; scroll-snap-align: start; }
+  .haze .strip { display: flex; overflow-x: auto; gap: var(--space-sm); padding-bottom: 8px; scroll-snap-type: x proximity; }
+  .haze .day { flex: 0 0 168px; scroll-snap-align: start; }
 }
 
 @media (max-width: 600px) {
-  .page-header { padding: 24px 16px 0; }
-  main { padding: 24px 16px 40px; }
-  footer { padding: 0 16px 40px; }
-  .kpis { grid-template-columns: 1fr; gap: 16px; }
-  .kpi .value { font-size: 28px; }
-  .card { padding: 16px; }
-  .rank-row { grid-template-columns: 24px 44px minmax(0, 1fr); }
-  .rank-row > .meta:last-child { grid-column: 2 / -1; text-align: left; white-space: normal; }
-  #map { height: 360px; }
+  .haze .kpis { grid-template-columns: 1fr; gap: var(--space-md); }
+  .haze .kpi .value { font-size: 28px; }
+  .haze .rank-row { grid-template-columns: 24px 44px minmax(0, 1fr); }
+  .haze .rank-row > .meta:last-child { grid-column: 2 / -1; text-align: left; white-space: normal; }
+  .haze #map { height: 360px; }
+  .haze-city { flex: 1 1 140px; }
 }

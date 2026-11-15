@@ -1,0 +1,52 @@
+/* "The physics behind it" section at the end of the Methods & Data view.
+   Every rule is scoped to .physics and uses the dashboard tokens (tokens.css), so the
+   section follows the dark and light modes and does not change any other view. */
+
+.physics { display: grid; gap: var(--space-md); margin-top: var(--space-lg); }
+.physics-head { display: grid; gap: var(--space-xs); max-width: 820px; }
+.physics-head h2 { font-size: var(--text-2xl); font-weight: 600; line-height: 1.1; letter-spacing: var(--tracking-display); }
+
+.physics-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-lg); align-items: stretch; }
+.physics-card h3 { font-size: var(--text-lg); font-weight: 600; line-height: 1.2; }
+
+.physics-figure {
+  display: block;
+  width: 100%;
+  max-width: 460px;
+  height: auto;
+  border-radius: var(--radius-control);
+  background: var(--color-paper);
+  border: var(--rule-hair) solid var(--color-rule);
+}
+
+/* colour key under the monsoon map */
+.physics-key { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2xs); }
+.physics .physics-key li { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--text-xs); }
+.physics-swatch { width: 22px; height: 0; flex: none; border-top: 3px solid var(--color-fire); }
+.physics-swatch.ne { border-top: 3px dashed var(--color-info); }
+
+.physics-links { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-lg); }
+
+/* parts of the diagrams */
+.physics .ph-title { fill: var(--color-ink); font-family: var(--font-display); font-size: 14px; font-weight: 600; }
+.physics .ph-label { fill: var(--color-ink-2); font-family: var(--font-body); font-size: 12px; }
+.physics .ph-label-strong { fill: var(--color-ink); font-family: var(--font-body); font-size: 12px; font-weight: 600; }
+.physics .ph-pixel { fill: none; stroke: var(--color-info); stroke-width: 2; }
+.physics .ph-grid { fill: none; stroke: var(--color-info); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; }
+.physics .ph-hit { fill: var(--color-fire); fill-opacity: 0.3; stroke: var(--color-fire); stroke-width: 2; }
+.physics .ph-fire { fill: var(--color-fire); }
+.physics .ph-ember { fill: var(--color-accent); }
+.physics .ph-ground { fill: var(--color-paper-3); }
+.physics .ph-peat { fill: var(--ramp-2); }
+.physics .ph-smoke { fill: var(--color-muted); fill-opacity: 0.55; }
+.physics .ph-smoke-light { fill: var(--color-muted); fill-opacity: 0.3; }
+.physics .ph-land { fill: var(--color-paper-3); stroke: var(--color-rule-strong); stroke-width: 1; }
+.physics .ph-city { fill: var(--color-accent); stroke: var(--color-paper); stroke-width: 2; }
+.physics .ph-sw { fill: none; stroke: var(--color-fire); stroke-width: 4; stroke-linecap: round; }
+.physics .ph-ne { fill: none; stroke: var(--color-info); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 7 6; }
+.physics .ph-head-sw { fill: var(--color-fire); }
+.physics .ph-head-ne { fill: var(--color-info); }
+
+@media (max-width: 85rem) {
+  .physics-grid { grid-template-columns: minmax(0, 1fr); }
+}

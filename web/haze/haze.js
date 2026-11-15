@@ -831,7 +831,7 @@
     var list = d.ranking[s.scope].slice(0, 10);
     $('ranking').innerHTML = list.map(function (r) {
       var color = levelColor(riskLevelOf(r.max_index));
-      var badges = (d.meta.haze_years.indexOf(r.year) >= 0 ? '<span class="badge haze">haze year</span>' : '') +
+      var badges = (d.meta.haze_years.indexOf(r.year) >= 0 ? '<span class="badge haze-year">haze year</span>' : '') +
         (r.nrt ? '<span class="badge nrt">NRT</span>' : '');
       return '<li class="rank-row' + (r.year === s.year ? ' selected' : '') + '" role="button" tabindex="0"' +
         ' data-year="' + r.year + '" data-month="' + r.peak_month + '">' +
@@ -975,7 +975,56 @@
     });
   }
 
+  // ---------- dashboard sidebar (same behaviour as setupShell in ../app.js) ----------
+
+  /** Collapse button (desktop) and slide-in menu (mobile). Shares the dashboard's saved state. */
+  function setupSidebar() {
+    var body = document.body;
+    try { if (localStorage.getItem('ignisensing-sidebar') === 'collapsed') { body.dataset.sidebar = 'collapsed'; } } catch (e) { /* storage unavailable */ }
+
+    var collapse = $('collapse-btn');
+    function syncCollapse() {
+      var collapsed = body.dataset.sidebar === 'collapsed';
+      collapse.setAttribute('aria-expanded', String(!collapsed));
+      collapse.querySelector('.nav-label').textContent = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+      Array.prototype.forEach.call(document.querySelectorAll('.nav-link'), function (link) {
+        link.title = collapsed ? link.querySelector('.nav-label').textContent : '';
+      });
+    }
+    syncCollapse();
+    collapse.addEventListener('click', function () {
+      body.dataset.sidebar = body.dataset.sidebar === 'collapsed' ? '' : 'collapsed';
+      try { localStorage.setItem('ignisensing-sidebar', body.dataset.sidebar || 'open'); } catch (e) { /* storage unavailable */ }
+      syncCollapse();
+      // the content width changed: let the maps and the chart fit again
+      requestAnimationFrame(function () {
+        if (map) { map.invalidateSize(); }
+        if (histMap) { histMap.invalidateSize(); }
+        if (chart) { chart.resize(); }
+      });
+    });
+
+    var menu = $('menu-btn'), backdrop = $('backdrop');
+    function openNav(open) {
+      body.dataset.nav = open ? 'open' : '';
+      backdrop.hidden = !open;
+      menu.setAttribute('aria-expanded', String(open));
+      if (open) {
+        var current = document.querySelector('.nav-link[aria-current]');
+        if (current) { current.focus(); }
+      } else if (document.activeElement && document.activeElement.closest('.sidebar')) {
+        menu.focus();
+      }
+    }
+    menu.addEventListener('click', function () { openNav(true); });
+    backdrop.addEventListener('click', function () { openNav(false); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && body.dataset.nav === 'open') { openNav(false); }
+    });
+  }
+
   function init() {
+    setupSidebar();
     if (typeof L === 'undefined') { note('The map library could not be loaded. Check your connection and reload.'); }
     if (typeof Chart === 'undefined') { note('The chart library could not be loaded. Check your connection and reload.'); }
 
