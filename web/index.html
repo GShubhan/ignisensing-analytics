@@ -88,7 +88,26 @@
         <label for="f-month">Month</label>
         <span class="select-wrap"><select id="f-month" disabled><option>All months</option></select></span>
       </div>
+      <button class="btn btn-small aoi-toggle" id="aoi-toggle" type="button" aria-expanded="false" aria-controls="aoi-panel" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="11" r="3"/><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/></svg>Custom area
+      </button>
       <button class="btn btn-quiet" id="f-reset" type="button" disabled>Reset filters</button>
+      <div class="aoi-panel" id="aoi-panel" hidden>
+        <div class="aoi-head">
+          <strong>Your own area of interest</strong>
+          <span class="hint">Get the fire calendar, median comparison and charts for any place: a radius around a point, or a box drawn on the Fire map.</span>
+        </div>
+        <div class="aoi-row">
+          <div class="field"><label for="aoi-lat">Latitude</label><input id="aoi-lat" type="number" inputmode="decimal" step="0.01" min="-11.5" max="6.5" placeholder="-2.21"></div>
+          <div class="field"><label for="aoi-lon">Longitude</label><input id="aoi-lon" type="number" inputmode="decimal" step="0.01" min="94.5" max="141.5" placeholder="113.92"></div>
+          <div class="field"><label for="aoi-km">Radius (km)</label><input id="aoi-km" type="number" inputmode="numeric" step="5" min="5" max="500" value="50"></div>
+          <button class="btn btn-primary" id="aoi-apply" type="submit">Show this area</button>
+          <span class="aoi-or">or</span>
+          <button class="btn" id="aoi-draw" type="button">Draw on the map</button>
+        </div>
+        <div class="aoi-presets" id="aoi-presets"><span class="hint">Try a haze-affected city:</span></div>
+        <p class="aoi-status" id="aoi-status" role="status"></p>
+      </div>
     </form>
 
     <main id="main" tabindex="-1">
@@ -157,9 +176,11 @@
                 <div class="segmented" role="group" aria-label="Calendar colour">
                   <button type="button" class="seg" data-calmode="count" aria-pressed="true">Activity</button>
                   <button type="button" class="seg" data-calmode="anomaly" aria-pressed="false">Anomaly</button>
+                  <button type="button" class="seg" data-calmode="raw" aria-pressed="false">Raw sensors</button>
                 </div>
                 <p class="hint">Hover to inspect. Select a cell to lock the month.</p>
               </div>
+              <div class="harmonize-callout" data-harmonize-callout hidden></div>
               <div class="chart" data-chart><div class="skeleton skeleton-tall"></div></div>
               <div class="legend legend-scale" data-legend></div>
             </article>
@@ -191,8 +212,9 @@
             </header>
             <div class="toolbar map-toolbar">
               <label class="check"><input type="checkbox" id="map-static"> Show masked static heat sources</label>
+              <button type="button" class="btn btn-small" id="map-draw" aria-pressed="false">Draw an area</button>
               <button type="button" class="btn btn-quiet" id="map-reset">Show all of Indonesia</button>
-              <p class="hint">Select a cell for details, or a province boundary to update the shared area.</p>
+              <p class="hint" id="map-hint">Select a cell for details, a province boundary to update the shared area, or draw your own area.</p>
             </div>
             <div class="notice" data-notice hidden></div>
             <div class="chart map-chart" data-chart><div class="skeleton skeleton-map"></div></div>

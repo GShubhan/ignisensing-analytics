@@ -216,8 +216,111 @@ function listJoin(items) {
   return `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 }
 
+// ---------- custom area of interest ----------
+// A user-defined area: a box drawn on the map, or a radius around a latitude/longitude.
+// Its monthly series is the sum of the harmonized 0.25° cells whose centres fall inside it,
+// built in the browser from data/cells/<year>.json. It behaves like a province everywhere else.
+const CUSTOM = "custom";
+const AOI_LIMITS = { s: -11.5, n: 6.5, w: 94.5, e: 141.5, kmMin: 5, kmMax: 500 };
+const AOI_PRESETS = [
+  { name: "Palangka Raya", lat: -2.21, lon: 113.92, km: 50, note: "Central Kalimantan peatlands" },
+  { name: "Pekanbaru", lat: 0.51, lon: 101.45, km: 50, note: "Riau" },
+  { name: "Palembang", lat: -2.99, lon: 104.76, km: 50, note: "South Sumatra" },
+  { name: "Pontianak", lat: -0.03, lon: 109.33, km: 50, note: "West Kalimantan" },
+];
+const KM_PER_DEG = 111.32;
+const fmt2 = (v, pos, neg) => `${Math.abs(v).toFixed(2)}°${v < 0 ? neg : pos}`;
+const latTxt = (v) => fmt2(v, "N", "S"), lonTxt = (v) => fmt2(v, "E", "W");
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const r = Math.PI / 180, dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(a));
+}
+function aoiBounds(a) {
+  if (a.type === "box") return { s: a.s, n: a.n, w: a.w, e: a.e };
+  const dLat = a.km / KM_PER_DEG, dLon = a.km / (KM_PER_DEG * Math.cos((a.lat * Math.PI) / 180));
+  return { s: a.lat - dLat, n: a.lat + dLat, w: a.lon - dLon, e: a.lon + dLon };
+}
+function aoiContains(a, lat, lon) {
+  return a.type === "box" ? lat >= a.s && lat <= a.n && lon >= a.w && lon <= a.e : haversineKm(a.lat, a.lon, lat, lon) <= a.km;
+}
+function aoiName(a) {
+  const preset = a.type === "pt" && AOI_PRESETS.find((p) => p.lat === a.lat && p.lon === a.lon);
+  if (preset) return `${a.km} km around ${preset.name}`;
+  return a.type === "pt" ? `${a.km} km around ${latTxt(a.lat)}, ${lonTxt(a.lon)}`
+    : `Drawn area ${latTxt(a.s)} to ${latTxt(a.n)}, ${lonTxt(a.w)} to ${lonTxt(a.e)}`;
+}
+function aoiToParam(a) {
+  return a.type === "pt" ? `pt:${a.lat},${a.lon},${a.km}` : `box:${a.s},${a.w},${a.n},${a.e}`;
+}
+function parseAoi(text) {
+  const m = /^(pt|box):(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)(?:,(-?[\d.]+))?$/.exec(text || "");
+  if (!m) return null;
+  const [a, b, c, d] = [m[2], m[3], m[4], m[5]].map(Number);
+  const L = AOI_LIMITS, inLat = (v) => v >= L.s && v <= L.n, inLon = (v) => v >= L.w && v <= L.e;
+  if (m[1] === "pt") return inLat(a) && inLon(b) && c >= L.kmMin && c <= L.kmMax ? { type: "pt", lat: a, lon: b, km: c } : null;
+  if (!Number.isFinite(d)) return null;
+  const s = Math.min(a, c), n = Math.max(a, c), w = Math.min(b, d), e = Math.max(b, d);
+  return inLat(s) && inLat(n) && inLon(w) && inLon(e) && n - s >= 0.1 && e - w >= 0.1 ? { type: "box", s, w, n, e } : null;
+}
+/** Builds the area's monthly series from every year's cell file (about 3 MB, cached after the first use). */
+async function buildCustomArea(a) {
+  await loadMapGeography();
+  const yearRows = await Promise.all(M.years.map(loadYear));
+  const inside = new Set();
+  mapData.cells.forEach(([lat, lon], c) => { if (aoiContains(a, lat, lon)) inside.add(c); });
+  const ser = new Array(M.n).fill(0);
+  yearRows.forEach((rows, yi) => {
+    const y = M.years[yi];
+    for (const r of rows) if (inside.has(r[0])) for (let k = 0; k < 12; k++) { const i = idx(y, k + 1); if (i < M.n) ser[i] += r[1 + k]; }
+  });
+  return { name: aoiName(a), slug: CUSTOM, series: ser, index: -1, aoi: a, cellCount: inside.size };
+}
+async function applyCustomArea(a, patch = {}) {
+  const status = $("#aoi-status");
+  if (status) status.textContent = "Building the area’s fire record…";
+  try {
+    M.bySlug.set(CUSTOM, await buildCustomArea(a));
+  } catch {
+    if (status) status.textContent = "The map data did not load. Check your connection, then try again.";
+    return false;
+  }
+  state.aoi = a;
+  if (status) status.textContent = "";
+  setState({ area: CUSTOM, mapCell: null, ...patch }, { push: true });
+  return true;
+}
+/** Test for "is this 0.25° cell inside the selected area", or null for all of Indonesia. */
+function areaCellTest(area = state.area) {
+  if (area === "indonesia") return null;
+  if (area === CUSTOM) { const a = M.bySlug.get(CUSTOM).aoi; return (c) => aoiContains(a, mapData.cells[c][0], mapData.cells[c][1]); }
+  const k = M.bySlug.get(area).index;
+  return (c) => mapData.cells[c][2] === k;
+}
+/** The selected area's bounding box in map units [x, y, w, h], or null for all of Indonesia. */
+function areaMapBox(area = state.area) {
+  if (area === "indonesia") return null;
+  if (area !== CUSTOM) { const b = mapData.provinces.provinces.find((pr) => pr.slug === area).box; return [b[0], b[1], b[2] - b[0], b[3] - b[1]]; }
+  // Custom areas are often small, so show about a degree of surroundings for context
+  const fr = mapData.provinces.frame, b = aoiBounds(M.bySlug.get(CUSTOM).aoi), ctx = 0.9;
+  return [(b.w - ctx - fr.lon0) * fr.scale, (fr.lat1 - b.n - ctx) * fr.scale, (b.e - b.w + 2 * ctx) * fr.scale, (b.n - b.s + 2 * ctx) * fr.scale];
+}
+/** Outline of the selected area as an SVG element in map units, or null. */
+function areaOutline(attrs, area = state.area) {
+  if (area === "indonesia") return null;
+  if (area !== CUSTOM) return svg("path", { d: mapData.provinces.provinces.find((pr) => pr.slug === area).path, ...attrs });
+  const a = M.bySlug.get(CUSTOM).aoi, fr = mapData.provinces.frame;
+  if (a.type === "box") {
+    return svg("rect", { x: (a.w - fr.lon0) * fr.scale, y: (fr.lat1 - a.n) * fr.scale, width: (a.e - a.w) * fr.scale, height: (a.n - a.s) * fr.scale, ...attrs });
+  }
+  const b = aoiBounds(a);
+  return svg("ellipse", { cx: (a.lon - fr.lon0) * fr.scale, cy: (fr.lat1 - a.lat) * fr.scale,
+    rx: ((b.e - b.w) / 2) * fr.scale, ry: ((b.n - b.s) / 2) * fr.scale, ...attrs });
+}
+const isCustom = () => state.area === CUSTOM;
+
 // ---------- state, kept in the URL ----------
-const state = { view: "overview", area: "indonesia", year: null, month: 0, calMode: "count", statics: false, sort: "priority", mapCell: null };
+const state = { view: "overview", area: "indonesia", year: null, month: 0, calMode: "count", statics: false, sort: "priority", mapCell: null, aoi: null };
 
 function readURL() {
   const p = new URLSearchParams(location.search);
@@ -228,15 +331,17 @@ function readURL() {
   state.year = M.years.includes(year) ? year : M.curYear;
   const month = +p.get("month");
   state.month = month >= 1 && month <= 12 && idx(state.year, month) <= M.last ? month : 0;
-  state.calMode = p.get("colour") === "median" ? "anomaly" : "count";
+  state.calMode = p.get("colour") === "median" ? "anomaly" : p.get("colour") === "raw" ? "raw" : "count";
 }
 function writeURL(push = false) {
   const p = new URLSearchParams();
   if (state.view !== "overview") p.set("view", state.view);
   if (state.area !== "indonesia") p.set("area", state.area);
+  if (state.area === CUSTOM && state.aoi) p.set("aoi", aoiToParam(state.aoi));
   if (state.year !== M.curYear) p.set("year", state.year);
   if (state.month) p.set("month", state.month);
   if (state.calMode === "anomaly") p.set("colour", "median");
+  if (state.calMode === "raw") p.set("colour", "raw");
   const url = `${location.pathname}${p.toString() ? `?${p}` : ""}`;
   if (url !== `${location.pathname}${location.search}`) history[push ? "pushState" : "replaceState"](null, "", url);
 }
@@ -461,6 +566,12 @@ function buildFilters() {
   for (const el of [area, year, $("#f-month")]) el.disabled = false;
 }
 function syncFilters() {
+  // The custom area appears in the Area list once one has been defined
+  const areaSel = $("#f-area"), custom = M.bySlug.get(CUSTOM);
+  let opt = $(`option[value="${CUSTOM}"]`, areaSel);
+  if (custom && !opt) { opt = html("option", { value: CUSTOM }); areaSel.children[0].after(opt); }
+  if (opt) opt.textContent = `Custom: ${custom.name}`;
+  $("#aoi-toggle")?.setAttribute("aria-pressed", String(isCustom()));
   $("#f-area").value = state.area;
   $("#f-year").value = state.year;
   const month = $("#f-month");
@@ -622,18 +733,17 @@ async function renderOverviewMap(p) {
 
   const fr = mapData.provinces.frame;
   const FW = (fr.lon1 - fr.lon0) * fr.scale, FH = (fr.lat1 - fr.lat0) * fr.scale;
-  const areaIdx = state.area === "indonesia" ? -1 : M.bySlug.get(state.area).index;
+  const inArea = areaCellTest();
   const months = p.months.map((m) => m - 1);
   const values = rows.map((r) => ({ cell: r[0], v: sum(months.map((k) => r[1 + k])) })).filter((d) => d.v >= 0.5);
-  const areaValues = values.filter((d) => areaIdx < 0 || mapData.cells[d.cell][2] === areaIdx);
+  const areaValues = values.filter((d) => !inArea || inArea(d.cell));
   const scaleMax = Math.max(1, ...areaValues.map((d) => d.v));
   const colour = countScale(1, scaleMax);
   const width = Math.max(300, Math.floor(chart.clientWidth));
-  const height = Math.round(areaIdx >= 0 ? Math.min(430, Math.max(260, width * 0.58)) : width * (FH / FW));
+  const height = Math.round(inArea ? Math.min(430, Math.max(260, width * 0.58)) : width * (FH / FW));
   let box = [0, 0, FW, FH];
-  if (areaIdx >= 0) {
-    const b = mapData.provinces.provinces.find((pr) => pr.slug === state.area).box;
-    box = [b[0], b[1], b[2] - b[0], b[3] - b[1]];
+  if (inArea) {
+    box = areaMapBox();
     const padX = Math.max(box[2] * 0.12, 20), padY = Math.max(box[3] * 0.12, 20);
     box = [box[0] - padX, box[1] - padY, box[2] + padX * 2, box[3] + padY * 2];
   }
@@ -652,15 +762,15 @@ async function renderOverviewMap(p) {
   const size = 0.25 * fr.scale;
   const cells = svg("g");
   values.forEach((d) => {
-    const [lat, lon, province] = mapData.cells[d.cell];
+    const [lat, lon] = mapData.cells[d.cell];
     cells.append(svg("rect", {
       x: ((lon - 0.125 - fr.lon0) * fr.scale).toFixed(1), y: ((fr.lat1 - lat - 0.125) * fr.scale).toFixed(1),
-      width: size, height: size, fill: colour(d.v), "fill-opacity": areaIdx >= 0 && province !== areaIdx ? 0.22 : 0.92,
+      width: size, height: size, fill: colour(d.v), "fill-opacity": inArea && !inArea(d.cell) ? 0.22 : 0.92,
     }));
   });
   root.append(cells);
-  if (areaIdx >= 0) root.append(svg("path", { d: mapData.provinces.provinces.find((pr) => pr.slug === state.area).path,
-    fill: "none", stroke: C.active, "stroke-width": 2 * px, "stroke-linejoin": "round" }));
+  const outline = areaOutline({ fill: "none", stroke: C.active, "stroke-width": 2 * px, "stroke-linejoin": "round" });
+  if (outline) root.append(outline);
   chart.replaceChildren(root);
   const provenance = spatialProvenance(p);
   const extra = [
@@ -845,18 +955,64 @@ function renderProvinceBars(p) {
 }
 
 // ---------- activity calendar ----------
+/** What a naive record looks like: raw MODIS until the model ends (Jan 2012), raw VIIRS after. National only. */
+function rawSeries() {
+  return D.national.HARMONIZED.map((_, i) => (isModel(i) ? D.national.MODIS[i] : D.national.VIIRS[i]));
+}
+/** Mean annual detections for complete years in [y0, y1]. */
+function meanAnnual(ser, y0, y1) {
+  const ys = M.completeYears.filter((y) => y >= y0 && y <= y1);
+  return ys.length ? sum(ys.map((y) => total(ser, y, MONTHS.map((_, k) => k + 1)))) / ys.length : null;
+}
+/** The before/after numbers that show what harmonization fixes. */
+function renderHarmonizeCallout(box, raw) {
+  const lastModelYear = M.yearOf(M.modelLast) - 1;            // 2011: last full year before VIIRS
+  const firstViirsYear = lastModelYear + 2;                     // 2013: first full VIIRS year
+  const harm = D.national.HARMONIZED, rawSer = rawSeries();
+  const before = (s) => meanAnnual(s, M.y0, lastModelYear), after = (s) => meanAnnual(s, firstViirsYear, M.completeYears.at(-1));
+  const rawJump = after(rawSer) / before(rawSer), harmJump = after(harm) / before(harm);
+  const fmtX = (v) => `${v.toFixed(1)}×`;
+  const change = (v) => `${Math.abs(Math.round((v - 1) * 100))}% ${v < 1 ? "lower" : "higher"}`;
+  const recent = `${firstViirsYear}–${M.completeYears.at(-1)}`, early = `${M.y0}–${lastModelYear}`;
+  box.hidden = false;
+  box.classList.toggle("is-raw", raw);
+  box.replaceChildren(
+    html("p", { class: "callout-lead" }, raw
+      ? [html("strong", { text: "Not harmonized. " }), document.createTextNode(`Taken at face value, ${recent} looks `),
+         html("strong", { class: "callout-bad", text: `${fmtX(rawJump)} more active` }), document.createTextNode(` than ${early}. Most of that jump is the sharper VIIRS sensor arriving in 2012, not more fire.`)]
+      : [html("strong", { text: "Harmonized. " }), document.createTextNode(`On one consistent scale, ${recent} averaged `),
+         html("strong", { class: "callout-good", text: change(harmJump) }), document.createTextNode(` activity than ${early}, not the false ${fmtX(rawJump)} rise the raw sensors suggest.`)]),
+    html("button", { type: "button", class: "btn btn-small", text: raw ? "Show harmonized" : "Compare with raw sensors" }),
+  );
+  $("button", box).addEventListener("click", () => setState({ calMode: raw ? "count" : "raw" }));
+}
+
 function renderCalendar() {
   const { chart, sub, title, legend: lg } = cardEls("calendar");
   addActions("calendar");
-  for (const b of $$("[data-calmode]")) b.setAttribute("aria-pressed", String(b.dataset.calmode === state.calMode));
-  const ser = series(state.area), area = areaName(state.area);
-  const meds = monthMedians(ser);
-  const anomaly = state.calMode === "anomaly";
-  title.textContent = anomaly ? "Each month against its median" : "Monthly detections";
+  const national = state.area === "indonesia";
+  // Raw sensor series exist for Indonesia as a whole only
+  const rawBtn = $('[data-calmode="raw"]');
+  rawBtn.disabled = !national;
+  rawBtn.title = national ? "Show the raw MODIS and VIIRS counts, before harmonization" : "Raw sensor counts are published for Indonesia as a whole only";
+  const mode = state.calMode === "raw" && !national ? "count" : state.calMode;
+  for (const b of $$("[data-calmode]")) b.setAttribute("aria-pressed", String(b.dataset.calmode === mode));
+  const harm = series(state.area), area = areaName(state.area);
+  const raw = mode === "raw";
+  const ser = raw ? rawSeries() : harm;
+  const meds = monthMedians(harm);
+  const anomaly = mode === "anomaly";
+  const callout = $("[data-harmonize-callout]");
+  if (national && !anomaly) renderHarmonizeCallout(callout, raw); else callout.hidden = true;
+  title.textContent = anomaly ? "Each month against its median" : raw ? "Raw sensor counts, not harmonized" : "Monthly detections";
   sub.textContent = anomaly
     ? `${area}. Colour shows how far each month sits from the median for that calendar month, ${baseLabel()}.`
+    : raw ? `${area}. MODIS until January 2012, VIIRS after, on the same colour scale as the harmonized view.`
     : `${area}, VIIRS-equivalent detections per month. Colour uses a log scale.`;
-  exporters.calendar = () => [["year", "month", "detections_viirs_equivalent", "median_same_month", "difference_from_median_pct", "source", "status"],
+  exporters.calendar = raw
+    ? () => [["year", "month", "raw_detections", "sensor", "harmonized_viirs_equivalent"],
+      ...Array.from({ length: M.n }, (_, i) => [M.yearOf(i), M.monthOf(i), ser[i]?.toFixed(0) ?? "", isModel(i) ? "MODIS" : "VIIRS", harm[i]?.toFixed(1) ?? ""])]
+    : () => [["year", "month", "detections_viirs_equivalent", "median_same_month", "difference_from_median_pct", "source", "status"],
     ...Array.from({ length: M.n }, (_, i) => {
       const v = ser[i], med = meds[M.monthOf(i) - 1];
       const status = i > M.last || v === null || v === undefined ? "unavailable" : i > M.lastComplete ? "partial" : "complete";
@@ -874,7 +1030,8 @@ function renderCalendar() {
     "aria-label": `Calendar heatmap of ${anomaly ? "monthly difference from the median" : "monthly detections"} for ${area}, ${years[0]} to ${years.at(-1)}. Use the arrow keys to read each month and Enter to select it.` }) };
   const root = f.root;
   root.append(svg("defs", {}, hatchDef("hatch-cal", C.paper)));
-  const shown = ser.slice(0, M.lastComplete + 1);
+  // The colour scale always comes from the harmonized series, so the raw view is directly comparable
+  const shown = harm.slice(0, M.lastComplete + 1);
   const maxV = Math.max(1, ...shown);
   const minV = Math.max(1, Math.min(...shown.filter((v) => v >= 0.5)));
   const colour = countScale(minV, maxV);
@@ -887,7 +1044,7 @@ function renderCalendar() {
     root.append(svg("rect", { x: 2, y: y0, width: 3, height: y1 - y0, rx: 1.5, fill: colourBand }));
     root.append(text(14, (y0 + y1) / 2, label, { transform: `rotate(-90 14 ${(y0 + y1) / 2})`, "text-anchor": "middle", fill: C.muted, "font-size": 10, "dominant-baseline": "middle" }));
   };
-  band(0, modelRows - 1, C.muted, "Model");
+  band(0, modelRows - 1, C.muted, raw ? "MODIS raw" : "Model");
   band(modelRows, years.length - 1, C.fire, "VIIRS observed");
 
   const cells = svg("g");
@@ -922,6 +1079,13 @@ function renderCalendar() {
     cursor.setAttribute("x", m.l + k * cw + gap / 2); cursor.setAttribute("y", m.t + r * ch);
     cursor.setAttribute("width", cw - gap); cursor.setAttribute("height", ch - gap); cursor.setAttribute("visibility", "visible");
     if (i > M.last) return showTip(monthLabel(i), [], "No data yet", anchor);
+    if (raw) {
+      const rv = ser[i], hv = harm[i];
+      return showTip(monthLabel(i), [
+        { value: fmt(rv), label: `raw ${isModel(i) ? "MODIS" : "VIIRS"} detections`, colour: colour(rv ?? 0), kind: "rect" },
+        { value: fmt(hv), label: "harmonized (VIIRS-equivalent)", colour: colour(hv ?? 0), kind: "rect" },
+      ], isModel(i) ? "MODIS misses small fires, so raw counts look lower than VIIRS would have seen." : "Observed VIIRS: raw and harmonized are the same.", anchor);
+    }
     const v = ser[i], med = meds[k], missing = v === null || v === undefined;
     const c = !missing && i <= M.lastComplete ? compare(ser, M.yearOf(i), [M.monthOf(i)]) : null;
     const status = missing ? "Unavailable" : i > M.lastComplete ? "Partial" : "Complete";
@@ -953,10 +1117,11 @@ function renderCalendar() {
     rampLegend(lg, { title: "Compared with the median for that month", stops: [[C.cool[2], 0], [C.cool[1], 1 / 6], [C.cool[0], 2 / 6], [C.mid, 0.5], [C.ramp[1], 0.625], [C.ramp[3], 0.75], [C.ramp[4], 0.875], [C.ramp[5], 1]],
       labels: [[0, "¼ or less"], [0.25, "½"], [0.5, "Median"], [0.75, "2×"], [1, "4× or more"]], extra: [hatchNote, selNote] });
   } else {
-    rampLegend(lg, { title: "Detections per month (log scale)", stops: C.ramp, labels: countLabels(colour, minV, maxV), extra: [hatchNote, selNote] });
+    rampLegend(lg, { title: raw ? "Raw detections per month (log scale, same as harmonized)" : "Detections per month (log scale)", stops: C.ramp, labels: countLabels(colour, minV, maxV), extra: [hatchNote, selNote] });
   }
-  renderCalendarInspector(ser, meds);
-  renderSeason(ser, meds);
+  // The inspector and seasonal chart always analyse the harmonized record
+  renderCalendarInspector(harm, meds);
+  renderSeason(harm, meds);
 }
 
 function renderCalendarInspector(ser, meds) {
@@ -1135,6 +1300,41 @@ function spatialProvenance(p) {
   return { kind: "MIXED", detail: "This period combines a MODIS-derived modeled estimate with observed VIIRS activity." };
 }
 let mapToken = 0;
+let mapDrawing = false; // "Draw an area" mode on the Fire map
+/** Drag a rectangle on the map; on release it becomes the custom area. */
+function enableMapDrawing(root, fr) {
+  const toMap = (e) => { const pt = root.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(root.getScreenCTM().inverse()); };
+  const toLatLon = (q) => ({ lat: fr.lat1 - q.y / fr.scale, lon: fr.lon0 + q.x / fr.scale });
+  const rect = svg("rect", { fill: C.active, "fill-opacity": 0.12, stroke: C.active, "stroke-width": 2, "vector-effect": "non-scaling-stroke", "stroke-dasharray": "6 4", "pointer-events": "none", visibility: "hidden" });
+  root.append(rect);
+  let start = null;
+  const place = (a, b) => {
+    rect.setAttribute("x", Math.min(a.x, b.x)); rect.setAttribute("y", Math.min(a.y, b.y));
+    rect.setAttribute("width", Math.abs(a.x - b.x)); rect.setAttribute("height", Math.abs(a.y - b.y));
+  };
+  root.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    start = toMap(e);
+    try { root.setPointerCapture(e.pointerId); } catch { /* synthetic or already-released pointer */ }
+    place(start, start);
+    rect.setAttribute("visibility", "visible");
+    hideTip();
+  });
+  root.addEventListener("pointermove", (e) => { if (start) { e.stopImmediatePropagation(); place(start, toMap(e)); } }, true);
+  root.addEventListener("pointerup", async (e) => {
+    if (!start) return;
+    const a = toLatLon(start), b = toLatLon(toMap(e));
+    start = null;
+    let s = Math.min(a.lat, b.lat), n = Math.max(a.lat, b.lat), w = Math.min(a.lon, b.lon), east = Math.max(a.lon, b.lon);
+    // A click or a tiny drag becomes a 0.5° box around the point, so it always contains a cell
+    if (n - s < 0.25) { const c = (s + n) / 2; s = c - 0.25; n = c + 0.25; }
+    if (east - w < 0.25) { const c = (w + east) / 2; w = c - 0.25; east = c + 0.25; }
+    const L = AOI_LIMITS, r2 = (v) => Math.round(v * 100) / 100;
+    const aoi = { type: "box", s: r2(clamp(s, L.s, L.n)), n: r2(clamp(n, L.s, L.n)), w: r2(clamp(w, L.w, L.e)), e: r2(clamp(east, L.w, L.e)) };
+    mapDrawing = false;
+    if (!(await applyCustomArea(aoi))) renderMap();
+  });
+}
 async function renderMap() {
   const { chart, sub, title, legend: lg, card } = cardEls("map");
   addActions("map");
@@ -1156,19 +1356,25 @@ async function renderMap() {
   }
   if (token !== mapToken || state.view !== "map") return;
 
-  const area = state.area, areaIdx = area === "indonesia" ? -1 : M.bySlug.get(area).index;
+  const area = state.area, inArea = areaCellTest(area);
   const months = p.months.map((mm) => mm - 1);
   const values = rows.map((r) => ({ cell: r[0], v: sum(months.map((k) => r[1 + k])) })).filter((d) => d.v > 0);
   const provenance = spatialProvenance(p);
   title.textContent = `Detections per 0.25° cell, ${p.label}`;
   sub.textContent = `Harmonized VIIRS-equivalent counts${area === "indonesia" ? "" : `, zoomed to ${areaName(area)}`}. Colour uses a log scale.`;
+  const drawBtn = $("#map-draw");
+  drawBtn.setAttribute("aria-pressed", String(mapDrawing));
+  drawBtn.textContent = mapDrawing ? "Cancel drawing" : "Draw an area";
+  $("#map-hint").textContent = mapDrawing
+    ? "Drag a rectangle on the map. Its monthly fire record is built from every 0.25° cell inside it."
+    : "Select a cell for details, a province boundary to update the shared area, or draw your own area.";
   notice.hidden = p.status !== "partial" && provenance.kind === "VIIRS";
   notice.textContent = p.status === "partial"
     ? `${p.label} is still being collected, so these counts are incomplete.`
     : provenance.detail;
   const cells = mapData.cells;
   exporters.map = () => [["cell_lat", "cell_lon", "province", "detections_viirs_equivalent", "period"],
-    ...values.filter((d) => areaIdx < 0 || cells[d.cell][2] === areaIdx).sort((a, b) => b.v - a.v).map((d) => [cells[d.cell][0], cells[d.cell][1], D.provinces[cells[d.cell][2]].name, d.v.toFixed(2), p.label])];
+    ...values.filter((d) => !inArea || inArea(d.cell)).sort((a, b) => b.v - a.v).map((d) => [cells[d.cell][0], cells[d.cell][1], D.provinces[cells[d.cell][2]].name, d.v.toFixed(2), p.label])];
 
   if (p.status === "none") {
     renderMapInspector({ p, values: [], provenance });
@@ -1180,12 +1386,11 @@ async function renderMap() {
   const fr = mapData.provinces.frame;
   const FW = (fr.lon1 - fr.lon0) * fr.scale, FH = (fr.lat1 - fr.lat0) * fr.scale;
   const w = Math.max(300, Math.floor(chart.clientWidth));
-  const h = Math.round(areaIdx >= 0 ? Math.max(w * (FH / FW), Math.min(420, w * 0.75)) : w * (FH / FW));
-  // Fit the view box to the selected province (padded), at the container's aspect ratio.
+  const h = Math.round(inArea ? Math.max(w * (FH / FW), Math.min(420, w * 0.75)) : w * (FH / FW));
+  // Fit the view box to the selected area (padded), at the container's aspect ratio.
   let box = [0, 0, FW, FH];
-  if (areaIdx >= 0) {
-    const b = mapData.provinces.provinces.find((pr) => pr.slug === area).box;
-    box = [b[0], b[1], b[2] - b[0], b[3] - b[1]];
+  if (inArea) {
+    box = areaMapBox(area);
     const padX = Math.max(box[2] * 0.12, 20), padY = Math.max(box[3] * 0.12, 20);
     box = [box[0] - padX, box[1] - padY, box[2] + 2 * padX, box[3] + 2 * padY];
   }
@@ -1195,7 +1400,7 @@ async function renderMap() {
   const px = box[2] / w; // map units per screen pixel
 
   const root = svg("svg", { viewBox: box.map((v) => v.toFixed(1)).join(" "), width: w, height: h, role: "img", "font-family": C.font,
-    "aria-label": `Map of Indonesia showing harmonized detections per 0.25 degree cell for ${p.label}${areaIdx >= 0 ? `, zoomed to ${areaName(area)}` : ""}. Use the arrow keys to inspect rendered cells and Enter to select one. The table below lists the most active cells.` });
+    "aria-label": `Map of Indonesia showing harmonized detections per 0.25 degree cell for ${p.label}${inArea ? `, zoomed to ${areaName(area)}` : ""}. Use the arrow keys to inspect rendered cells and Enter to select one. The table below lists the most active cells.` });
   root.append(svg("rect", { x: box[0], y: box[1], width: box[2], height: box[3], fill: C.paper }));
   root.append(svg("image", { href: "assets/bluemarble.jpg", x: 0, y: 0, width: FW, height: FH, preserveAspectRatio: "none" }));
   root.append(svg("rect", { x: 0, y: 0, width: FW, height: FH, fill: C.paper, "fill-opacity": 0.5 }));
@@ -1205,7 +1410,7 @@ async function renderMap() {
   root.append(provG);
 
   const visible = values.filter((d) => d.v >= 0.5);
-  const scaleMax = Math.max(1, ...visible.filter((d) => areaIdx < 0 || cells[d.cell][2] === areaIdx).map((d) => d.v));
+  const scaleMax = Math.max(1, ...visible.filter((d) => !inArea || inArea(d.cell)).map((d) => d.v));
   const colour = countScale(1, scaleMax);
   const cellG = svg("g");
   const size = 0.25 * fr.scale;
@@ -1222,7 +1427,7 @@ async function renderMap() {
     const pos = cellBox(d.cell);
     const selected = d.cell === state.mapCell;
     cellG.append(svg("rect", { ...pos,
-      fill: colour(d.v), "fill-opacity": areaIdx >= 0 && cells[d.cell][2] !== areaIdx ? 0.35 : 0.92,
+      fill: colour(d.v), "fill-opacity": inArea && !inArea(d.cell) ? 0.35 : 0.92,
       stroke: selected ? C.active : null, "stroke-width": selected ? 2 : null, "vector-effect": selected ? "non-scaling-stroke" : null,
       "data-map-selection": selected ? "" : null, "data-c": d.cell, "data-v": d.v }));
   }
@@ -1233,9 +1438,8 @@ async function renderMap() {
     for (const [lat, lon] of mapData.statics) sg.append(svg("circle", { cx: ((lon - fr.lon0) * fr.scale).toFixed(1), cy: ((fr.lat1 - lat) * fr.scale).toFixed(1), r: 2.2 * px, "pointer-events": "none" }));
     root.append(sg);
   }
-  if (areaIdx >= 0) {
-    root.append(svg("path", { d: mapData.provinces.provinces.find((pr) => pr.slug === area).path, fill: "none", stroke: C.active, "stroke-width": 2 * px, "stroke-linejoin": "round", "pointer-events": "none" }));
-  }
+  const outline = areaOutline({ fill: "none", stroke: C.active, "stroke-width": 2 * px, "stroke-linejoin": "round", "pointer-events": "none" }, area);
+  if (outline) root.append(outline);
   const hoverProvince = svg("path", { fill: "none", stroke: C.info, "stroke-width": 1.5 * px, "pointer-events": "none", visibility: "hidden" });
   const hoverCell = svg("rect", { fill: "none", stroke: C.ink, "stroke-width": 1.5 * px, "pointer-events": "none", visibility: "hidden" });
   root.append(hoverProvince, hoverCell);
@@ -1288,12 +1492,14 @@ async function renderMap() {
     hideTip();
   });
   root.addEventListener("click", (e) => {
+    if (mapDrawing) return;
     const c = e.target.dataset?.c, pk = c !== undefined ? cells[+c][2] : e.target.dataset?.p;
-    if (c !== undefined && (areaIdx < 0 || +pk === areaIdx)) selectMapCell(+c);
+    if (c !== undefined && (!inArea || inArea(+c))) selectMapCell(+c);
     else if (pk !== undefined) setState({ area: D.provinces[+pk].slug, mapCell: null });
   });
-  root.style.cursor = "pointer";
-  const keyboardCells = visible.filter((d) => areaIdx < 0 || cells[d.cell][2] === areaIdx);
+  root.style.cursor = mapDrawing ? "crosshair" : "pointer";
+  if (mapDrawing) enableMapDrawing(root, fr);
+  const keyboardCells = visible.filter((d) => !inArea || inArea(d.cell));
   if (keyboardCells.length) {
     keyNav(root, keyboardCells.length, {
       start: Math.max(0, keyboardCells.findIndex((d) => d.cell === state.mapCell)),
@@ -1303,13 +1509,13 @@ async function renderMap() {
   }
   chart.replaceChildren(root);
 
-  const extra = areaIdx >= 0 ? [html("span", { class: "legend-item" }, [key(C.active), document.createTextNode("Selected province")])] : [];
-  $("#map-reset").hidden = areaIdx < 0;
+  const extra = inArea ? [html("span", { class: "legend-item" }, [key(C.active), document.createTextNode(isCustom() ? "Custom area" : "Selected province")])] : [];
+  $("#map-reset").hidden = !inArea;
   if (state.statics) extra.push(html("span", { class: "legend-item" }, [svg("svg", { viewBox: "0 0 14 10", "aria-hidden": "true" }, svg("circle", { cx: 7, cy: 5, r: 3, fill: C.info })), document.createTextNode(`Static heat source, masked from counts (${fmt(mapData.statics.length)})`)]));
   extra.push(html("span", { class: "legend-item", text: "Cells below 0.5 detections are not drawn." }));
   rampLegend(lg, { title: `VIIRS-equivalent detections per cell, ${p.label} · ${provenance.kind}`, stops: C.ramp,
     labels: countLabels(colour, 1, scaleMax), extra });
-  const areaValues = values.filter((d) => areaIdx < 0 || cells[d.cell][2] === areaIdx);
+  const areaValues = values.filter((d) => !inArea || inArea(d.cell));
   mapData.current = { p, values, areaValues, provenance };
   renderMapInspector({ p, values, provenance });
   renderTopCells(areaValues, p);
@@ -1392,11 +1598,12 @@ function renderMapInspector({ p, values, provenance }) {
     const available = p.status !== "none" && p.months.every((m) => ser[idx(state.year, m)] !== null && ser[idx(state.year, m)] !== undefined);
     const value = available ? total(ser, state.year, p.months) : null;
     const status = !available ? "Unavailable" : p.status === "partial" ? "Partial" : "Complete";
+    const custom = isCustom();
     title.textContent = province.name;
-    sub.textContent = "Province";
+    sub.textContent = custom ? `Custom area · ${fmt(province.cellCount)} active 0.25° cells inside` : "Province";
     const facts = html("dl", { class: "inspector-facts map-inspector-facts" }, [
       html("div", { class: "inspector-primary" }, [
-        html("dt", { text: "Harmonized provincial activity" }),
+        html("dt", { text: custom ? "Harmonized activity in this area" : "Harmonized provincial activity" }),
         html("dd", { class: "inspector-value", text: value === null ? "N/A" : fmt(value) }),
         html("span", { class: "inspector-unit", text: value === null ? "No provincial record for this period" : "VIIRS-equivalent hotspot detections" }),
       ]),
@@ -1409,10 +1616,14 @@ function renderMapInspector({ p, values, provenance }) {
     params.set("area", state.area);
     body.replaceChildren(
       facts,
-      html("p", { class: "inspector-interpretation", text: available
-        ? "This value comes from the existing provincial harmonized series, not a sum of the visible map cells."
-        : "No provincial record is available for this period. This is not presented as a confirmed zero." }),
-      html("p", { class: "map-limitation", text: "Province boundaries use the dashboard’s existing 34-province geography. Cell display thresholds do not change the provincial value." }),
+      html("p", { class: "inspector-interpretation", text: custom
+        ? "This value is the sum of every harmonized 0.25° cell whose centre falls inside the area, including cells too small to draw."
+        : available
+          ? "This value comes from the existing provincial harmonized series, not a sum of the visible map cells."
+          : "No provincial record is available for this period. This is not presented as a confirmed zero." }),
+      html("p", { class: "map-limitation", text: custom
+        ? "Cells are 0.25° (about 28 km), so the area’s edge is approximate: a cell counts if its centre is inside."
+        : "Province boundaries use the dashboard’s existing 34-province geography. Cell display thresholds do not change the provincial value." }),
       sourceNote,
       html("a", { class: "btn btn-small", href: `?${params}`, "data-view-link": "history", text: "Open Historical Analysis" }),
     );
@@ -1681,7 +1892,8 @@ function renderWatchlist() {
   addActions("watch", { png: false });
   const p = period();
   // the selected province follows the Area filter (and a clicked row sets the filter, see below)
-  watchSelection = state.area === "indonesia" ? null : state.area;
+  // The watchlist ranks provinces, so a custom area has no row to select
+  watchSelection = state.area === "indonesia" || state.area === CUSTOM ? null : state.area;
   const areaChanged = state.area !== watchAreaShown;
   watchAreaShown = state.area;
   title.textContent = "Priority Watchlist";
@@ -1842,12 +2054,57 @@ async function boot() {
     return;
   }
   M = derive(D);
+  // A shared link to a custom area: rebuild it before the first render
+  const aoi = parseAoi(new URLSearchParams(location.search).get("aoi"));
+  if (aoi) {
+    try { M.bySlug.set(CUSTOM, await buildCustomArea(aoi)); state.aoi = aoi; } catch { /* falls back to Indonesia */ }
+  }
   readURL();
   buildFilters();
   syncFilters();
   $("#data-status").textContent = `Data through ${monthLabel(M.lastComplete)}${D.meta.lastPartial ? `, ${MONTHS_LONG[M.monthOf(M.last) - 1]} in progress` : ""}`;
   if (!wired) wire();
   render();
+}
+/** The "Custom area" panel in the filter bar, and the map's draw button. */
+function wireCustomArea() {
+  const panel = $("#aoi-panel"), toggle = $("#aoi-toggle"), status = $("#aoi-status");
+  const lat = $("#aoi-lat"), lon = $("#aoi-lon"), km = $("#aoi-km");
+  const open = (show) => {
+    panel.hidden = !show;
+    toggle.setAttribute("aria-expanded", String(show));
+    if (show && state.aoi?.type === "pt") { lat.value = state.aoi.lat; lon.value = state.aoi.lon; km.value = state.aoi.km; }
+    if (show) lat.focus();
+  };
+  toggle.addEventListener("click", () => open(panel.hidden));
+  const apply = async (a) => {
+    status.classList.remove("is-error");
+    if (await applyCustomArea(a)) open(false);
+  };
+  // The filter bar is a form: Enter in a coordinate box applies the area instead of reloading the page
+  $("#filters").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const L = AOI_LIMITS, la = parseFloat(lat.value), lo = parseFloat(lon.value), r = parseFloat(km.value);
+    const problems = [];
+    if (!(la >= L.s && la <= L.n)) problems.push(`latitude between ${L.s} and ${L.n}`);
+    if (!(lo >= L.w && lo <= L.e)) problems.push(`longitude between ${L.w} and ${L.e}`);
+    if (!(r >= L.kmMin && r <= L.kmMax)) problems.push(`a radius of ${L.kmMin} to ${L.kmMax} km`);
+    if (problems.length) { status.textContent = `Enter ${listJoin(problems)} (the area this dashboard covers).`; status.classList.add("is-error"); return; }
+    apply({ type: "pt", lat: Math.round(la * 100) / 100, lon: Math.round(lo * 100) / 100, km: Math.round(r) });
+  });
+  const presets = $("#aoi-presets");
+  for (const p of AOI_PRESETS) {
+    const b = html("button", { type: "button", class: "chip", title: `${p.note}: ${p.km} km around ${latTxt(p.lat)}, ${lonTxt(p.lon)}`, text: p.name });
+    b.addEventListener("click", () => { lat.value = p.lat; lon.value = p.lon; km.value = p.km; apply({ type: "pt", lat: p.lat, lon: p.lon, km: p.km }); });
+    presets.append(b);
+  }
+  $("#aoi-draw").addEventListener("click", () => { mapDrawing = true; open(false); setState({ view: "map" }); });
+  $("#map-draw").addEventListener("click", () => { mapDrawing = !mapDrawing; renderMap(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!panel.hidden) { open(false); toggle.focus(); }
+    if (mapDrawing) { mapDrawing = false; if (state.view === "map") renderMap(); }
+  });
 }
 let wired = false;
 /** Event wiring that must happen once, even if boot runs again after a failed load. */
@@ -1860,6 +2117,7 @@ function wire() {
   for (const b of $$("[data-calmode]")) b.addEventListener("click", () => setState({ calMode: b.dataset.calmode }));
   $("#map-static").addEventListener("change", (e) => setState({ statics: e.target.checked }));
   $("#map-reset").addEventListener("click", () => setState({ area: "indonesia" }));
+  wireCustomArea();
   $("#watch-sort").addEventListener("change", (e) => setState({ sort: e.target.value }));
   let width = $("#main").clientWidth, timer;
   new ResizeObserver(() => {
