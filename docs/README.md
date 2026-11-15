@@ -11,5 +11,5 @@ Everyone adds screenshots and notes here as they go.
 - [ ] GitHub link (repo must be **public**)
 - [ ] Live site link
 - [ ] Screenshots of the dashboard
-- [ ] Short explanation of how MODIS + VIIRS were harmonized (from Shubhan's ML notes)
+- [ ] Short explanation of how MODIS + VIIRS were harmonized
 - [ ] Data sources and credits (NASA FIRMS, any others used)
